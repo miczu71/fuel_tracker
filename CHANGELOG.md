@@ -1,0 +1,16 @@
+# Changelog
+
+## 0.1.0
+
+Pierwsze wydanie:
+
+- Dziennik tankowań (pełny/częściowy bak, cena/L, stacja, GPS) z edycją i usuwaniem
+- Silnik statystyk w stylu Fuelio: spalanie L/100km liczone segmentami między pełnymi bakami, średnia ogólna Σvol/Σdist, koszt/km
+- Wydatki w kategoriach (Serwis, Eksploatacja, Parking, Myjnia, …)
+- Import historii z eksportu Fuelio CSV (upload w UI lub auto-import z `/share/fuel_tracker/import/`)
+- Import wydatków/serwisów z API Drivvo (jednorazowa migracja)
+- Raport weryfikacyjny importu (liczba wpisów, suma PLN, suma litrów)
+- Eksport do Fuelio CSV
+- Sensory MQTT discovery (urządzenie „Superb Fuel"): koszty, spalanie, ostatnie tankowanie, budżet miesięczny
+- Web UI po polsku przez ingress (pulpit z wykresami, formularz tankowania z prefill odometru z myskoda)
+- Nocny backup bazy do `/share/fuel_tracker/`

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Fuel Tracker{% endblock %} — {{ vehicle }}</title>
+<link rel="stylesheet" href="{{ base }}/static/app.css">
+</head>
+<body>
+<nav class="nav">
+  <span class="nav-brand">⛽ {{ vehicle }}</span>
+  <div class="nav-links">
+    <a href="{{ base }}/" {% if active == 'dashboard' %}class="active"{% endif %}>Pulpit</a>
+    <a href="{{ base }}/fillups" {% if active == 'fillups' %}class="active"{% endif %}>Tankowania</a>
+    <a href="{{ base }}/expenses" {% if active == 'expenses' %}class="active"{% endif %}>Wydatki</a>
+    <a href="{{ base }}/settings" {% if active == 'settings' %}class="active"{% endif %}>Ustawienia</a>
+  </div>
+</nav>
+<main class="main">
+{% block content %}{% endblock %}
+</main>
+<script src="{{ base }}/static/chart.umd.min.js"></script>
+<script src="{{ base }}/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

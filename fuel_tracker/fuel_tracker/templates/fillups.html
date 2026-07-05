@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% set active = 'fillups' %}
+{% block title %}Tankowania{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Tankowania</h1>
+  <a class="btn primary" href="{{ base }}/fillup-form">+ Dodaj</a>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table class="table" id="fillups-table">
+      <thead><tr>
+        <th>Data</th><th class="num">Przebieg</th><th class="num">Litry</th>
+        <th class="num">Cena/L</th><th class="num">Kwota</th>
+        <th class="num">L/100km</th><th>Pełny</th><th>Stacja</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>FT.initFillups("{{ base }}");</script>{% endblock %}

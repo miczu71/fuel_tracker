@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set active = 'dashboard' %}
+{% block title %}Pulpit{% endblock %}
+{% block content %}
+<div class="grid stats" id="stat-cards">
+  <div class="card stat"><span class="stat-label">Średnie spalanie</span><span class="stat-value" id="s-avg">–</span><span class="stat-unit">L/100km</span></div>
+  <div class="card stat"><span class="stat-label">Ostatnie spalanie</span><span class="stat-value" id="s-last">–</span><span class="stat-unit">L/100km</span></div>
+  <div class="card stat"><span class="stat-label">Koszt na km</span><span class="stat-value" id="s-costkm">–</span><span class="stat-unit">PLN/km</span></div>
+  <div class="card stat"><span class="stat-label">Wydano na paliwo</span><span class="stat-value" id="s-total">–</span><span class="stat-unit">PLN</span></div>
+  <div class="card stat"><span class="stat-label">Inne wydatki</span><span class="stat-value" id="s-exp">–</span><span class="stat-unit">PLN</span></div>
+  <div class="card stat"><span class="stat-label">Ostatnia cena</span><span class="stat-value" id="s-price">–</span><span class="stat-unit">PLN/L</span></div>
+</div>
+
+<div class="card" id="budget-card" hidden>
+  <div class="card-title">Budżet paliwowy — <span id="b-month"></span></div>
+  <div class="budget-row">
+    <div class="budget-bar"><div class="budget-fill" id="b-fill"></div></div>
+    <span class="budget-text"><span id="b-spent">–</span> / <span id="b-total">–</span> PLN</span>
+  </div>
+  <div class="muted" id="b-left"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Spalanie L/100km</div>
+  <div class="chart-wrap"><canvas id="chart-consumption"></canvas></div>
+</div>
+<div class="card">
+  <div class="card-title">Koszty miesięczne</div>
+  <div class="chart-wrap"><canvas id="chart-monthly"></canvas></div>
+</div>
+<div class="card">
+  <div class="card-title">Cena za litr</div>
+  <div class="chart-wrap"><canvas id="chart-price"></canvas></div>
+</div>
+
+<a class="fab" href="{{ base }}/fillup-form">+ Tankowanie</a>
+{% endblock %}
+{% block scripts %}<script>FT.initDashboard();</script>{% endblock %}

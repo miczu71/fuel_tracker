@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set active = 'fillups' %}
+{% block title %}Tankowanie{% endblock %}
+{% block content %}
+<div class="page-head"><h1 id="form-title">Nowe tankowanie</h1></div>
+<form class="card form" id="fillup-form" data-edit-id="{{ edit_id }}">
+  <label>Data i godzina
+    <input type="datetime-local" name="date" required>
+  </label>
+  <label>Przebieg (km) <span class="muted" id="odo-hint"></span>
+    <input type="number" name="odometer" inputmode="numeric" min="0" required>
+  </label>
+  <div class="row3">
+    <label>Litry
+      <input type="number" name="volume_l" inputmode="decimal" step="0.01" min="0">
+    </label>
+    <label>Cena/L
+      <input type="number" name="price_per_l" inputmode="decimal" step="0.01" min="0">
+    </label>
+    <label>Kwota (PLN)
+      <input type="number" name="total_cost" inputmode="decimal" step="0.01" min="0">
+    </label>
+  </div>
+  <p class="muted">Wypełnij dowolne 2 z 3 pól — trzecie wyliczy się samo.</p>
+  <label class="check">
+    <input type="checkbox" name="full_tank" checked> Pełny bak
+  </label>
+  <label class="check">
+    <input type="checkbox" name="missed_previous"> Pominięto poprzednie tankowanie
+  </label>
+  <label>Stacja
+    <input type="text" name="station" list="stations">
+    <datalist id="stations"></datalist>
+  </label>
+  <label>Notatki
+    <input type="text" name="notes">
+  </label>
+  <div class="form-actions">
+    <button type="submit" class="btn primary big">Zapisz</button>
+    <a class="btn" href="{{ base }}/fillups">Anuluj</a>
+  </div>
+  <div class="error" id="form-error" hidden></div>
+</form>
+{% endblock %}
+{% block scripts %}<script>FT.initFillupForm("{{ base }}");</script>{% endblock %}

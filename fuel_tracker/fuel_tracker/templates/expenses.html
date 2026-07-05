@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set active = 'expenses' %}
+{% block title %}Wydatki{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Wydatki</h1></div>
+<form class="card form" id="expense-form">
+  <div class="row3">
+    <label>Data
+      <input type="datetime-local" name="date" required>
+    </label>
+    <label>Kwota (PLN)
+      <input type="number" name="cost" inputmode="decimal" step="0.01" min="0" required>
+    </label>
+    <label>Przebieg (km)
+      <input type="number" name="odometer" inputmode="numeric" min="0">
+    </label>
+  </div>
+  <label>Kategoria
+    <select name="category_id" id="category-select"></select>
+  </label>
+  <label>Opis
+    <input type="text" name="description">
+  </label>
+  <div class="form-actions">
+    <button type="submit" class="btn primary">Dodaj wydatek</button>
+  </div>
+  <div class="error" id="expense-error" hidden></div>
+</form>
+<div class="card">
+  <div class="card-title">Suma wg kategorii</div>
+  <div id="category-totals" class="chips"></div>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table class="table" id="expenses-table">
+      <thead><tr>
+        <th>Data</th><th>Kategoria</th><th>Opis</th>
+        <th class="num">Kwota</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>FT.initExpenses();</script>{% endblock %}
