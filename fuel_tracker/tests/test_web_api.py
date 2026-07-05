@@ -98,6 +98,15 @@ def test_csv_import_and_export(client):
     assert b"## Log" in exp.data
 
 
+def test_import_drivvo_requires_credentials(client):
+    r = client.post("/api/import/drivvo", json={})
+    assert r.status_code == 400
+    # Dane w body przechodza walidacje (blad dopiero przy logowaniu do API).
+    r = client.post("/api/import/drivvo",
+                    json={"email": "a@b.c", "password": "x"})
+    assert r.status_code == 502
+
+
 def test_verify_endpoint(client):
     v = client.get("/api/verify").get_json()
     assert "checks" in v

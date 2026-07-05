@@ -54,3 +54,19 @@ def notify(service: str, title: str, message: str) -> bool:
     except requests.RequestException as exc:
         logger.warning("Powiadomienie nieudane: %s", exc)
         return False
+
+
+def get_mqtt_service() -> dict | None:
+    """Dane brokera MQTT z usługi Supervisora (wymaga services: mqtt:need).
+
+    Zwraca dict z kluczami host/port/username/password/ssl albo None.
+    """
+    try:
+        resp = requests.get("http://supervisor/services/mqtt",
+                            headers=_headers(), timeout=10)
+        if resp.status_code == 200:
+            return resp.json().get("data")
+        logger.warning("Supervisor services/mqtt -> HTTP %d", resp.status_code)
+    except requests.RequestException as exc:
+        logger.warning("Supervisor services/mqtt niedostępne: %s", exc)
+    return None

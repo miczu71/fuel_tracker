@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+
+- MQTT bez konfiguracji: gdy `mqtt_user` jest puste, add-on pobiera dane brokera
+  z usługi Supervisora (`services: mqtt:need`) — działa od razu z core-mosquitto
+- `POST /api/import/drivvo` przyjmuje `email`/`password` w body żądania —
+  jednorazowy import bez zapisywania hasła w opcjach add-onu
+- Sensory `monetary` mają `state_class: total` (jedyna kombinacja dopuszczana
+  przez walidator HA; wcześniej `total_increasing`/`measurement` logowały ostrzeżenia)
+
 ## 0.1.0
 
 Pierwsze wydanie:

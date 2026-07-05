@@ -89,11 +89,24 @@ def main() -> None:
 
     auto_import_share(db_path, vehicle_id, share_dir, default_fuel)
 
+    mqtt_host = _env("MQTT_HOST", "core-mosquitto")
+    mqtt_port = int(_env("MQTT_PORT", "1883") or 1883)
+    mqtt_user = _env("MQTT_USER")
+    mqtt_password = _env("MQTT_PASSWORD")
+    if not mqtt_user:
+        svc = ha_client.get_mqtt_service()
+        if svc:
+            mqtt_host = svc.get("host") or mqtt_host
+            mqtt_port = int(svc.get("port") or mqtt_port)
+            mqtt_user = svc.get("username") or ""
+            mqtt_password = svc.get("password") or ""
+            logger.info("MQTT: dane brokera z usługi Supervisora (%s)", mqtt_host)
+
     mqtt_pub = MQTTPublisher(
-        host=_env("MQTT_HOST", "core-mosquitto"),
-        port=int(_env("MQTT_PORT", "1883") or 1883),
-        user=_env("MQTT_USER"),
-        password=_env("MQTT_PASSWORD"),
+        host=mqtt_host,
+        port=mqtt_port,
+        user=mqtt_user,
+        password=mqtt_password,
         device_name="Superb Fuel",
         version=__version__,
     )

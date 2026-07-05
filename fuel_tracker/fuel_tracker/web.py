@@ -251,12 +251,14 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
 
     @app.post("/api/import/drivvo")
     def api_import_drivvo():
-        email = config.get("drivvo_email")
-        password = config.get("drivvo_password")
-        if not email or not password:
-            return jsonify({"error": "Uzupełnij drivvo_email i drivvo_password "
-                                     "w opcjach add-onu"}), 400
         body = request.get_json(silent=True) or {}
+        # Dane logowania z body maja priorytet nad opcjami add-onu — jednorazowy
+        # import nie wymaga zapisywania hasla w konfiguracji Supervisora.
+        email = body.get("email") or config.get("drivvo_email")
+        password = body.get("password") or config.get("drivvo_password")
+        if not email or not password:
+            return jsonify({"error": "Podaj email/password w żądaniu albo "
+                                     "drivvo_email/drivvo_password w opcjach add-onu"}), 400
         try:
             result = importer_drivvo.run_import(
                 conn(), vehicle_id, email, password,
