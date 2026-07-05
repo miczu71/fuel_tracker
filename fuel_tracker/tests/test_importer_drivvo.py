@@ -64,3 +64,33 @@ def test_refuelling_volume_fallback_and_dedup(conn, vehicle_id):
     assert row["volume_l"] == 20.0       # fallback valor_total/preco
     assert row["full_tank"] == 0
     assert row["source"] == "drivvo_api"
+
+
+def test_expenses_nested_tipos_despesa(conn, vehicle_id):
+    # Realny format web API: kwoty w tipos_despesa[].valor, id w id_despesa.
+    client = make_client(expenses=[{
+        "id_despesa": 5176262, "data": "2024-11-21 20:03:24", "odometro": 2723,
+        "observacao": "", "tipos_despesa": [{"nome": "Płyny", "valor": 89.98}]}])
+    report = imp.import_expenses(conn, vehicle_id, client, 123)
+    assert report.expenses_added == 1
+    row = queries.fetch_expenses(conn, vehicle_id)[0]
+    assert row["cost"] == 89.98
+    assert row["category"] == "Eksploatacja"      # Płyny → Eksploatacja
+    assert row["description"] == "Płyny"
+    assert row["source_uid"] == "5176262:0"
+    assert row["date"] == "2024-11-21 20:03"
+
+
+def test_expenses_dedup_by_odometer_and_cost(conn, vehicle_id):
+    # Wpis z Fuelio CSV: data rozni sie o minute, opis wielkoscia liter.
+    conn.execute(
+        """INSERT INTO expenses (vehicle_id, date, odometer, category_id,
+           description, cost, source) VALUES (?, '2024-11-21 20:04', 2723,
+           2, 'plyny', 89.98, 'fuelio_csv')""", (vehicle_id,))
+    conn.commit()
+    client = make_client(expenses=[{
+        "id_despesa": 5176262, "data": "2024-11-21 20:03:24", "odometro": 2723,
+        "tipos_despesa": [{"nome": "Płyny", "valor": 89.98}]}])
+    report = imp.import_expenses(conn, vehicle_id, client, 123)
+    assert report.expenses_added == 0
+    assert report.expenses_skipped == 1

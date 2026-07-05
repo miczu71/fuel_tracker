@@ -30,6 +30,7 @@ _CATEGORY_MAP = {
     "rejestracja": "Rejestracja",
     "mandaty": "Mandaty", "mandat": "Mandaty",
     "eksploatacja": "Eksploatacja",
+    "płyny": "Eksploatacja", "plyny": "Eksploatacja",
 }
 
 
@@ -112,34 +113,63 @@ def _map_category(conn: sqlite3.Connection, raw: str | None) -> int:
     return dbm.category_id(conn, name)
 
 
+def _expense_entries(row: dict):
+    """(typ, kwota, opis) z wiersza wydatku/serwisu.
+
+    Web API Drivvo trzyma kwoty w zagnieżdżonej liście tipos_despesa /
+    tipos_servico (nome+valor, brak valor_total na wierzchu); starszy /
+    prosty format ma płasko valor_total + tipo_despesa/tipo_servico.
+    """
+    desc_base = (row.get("observacao") or row.get("descricao") or "").strip()
+    items = row.get("tipos_despesa") or row.get("tipos_servico")
+    if isinstance(items, list) and items:
+        for it in items:
+            if isinstance(it, dict):
+                name = (it.get("nome") or it.get("tipo") or "").strip() or None
+                yield name, float(it.get("valor") or 0), desc_base or name
+    else:
+        name = row.get("tipo_servico") or row.get("tipo_despesa")
+        yield name, float(row.get("valor_total") or 0), desc_base or name
+
+
 def import_expenses(conn: sqlite3.Connection, vehicle_id: int,
                     client: DrivvoClient, drivvo_vehicle_id: int) -> ImportReport:
     """Import wydatków i serwisów z Drivvo (tankowania pomijane — źródłem jest CSV)."""
     report = ImportReport()
     rows = [
-        *(dict(r, _kind="servico") for r in client.services(drivvo_vehicle_id)),
-        *(dict(r, _kind="despesa") for r in client.expenses(drivvo_vehicle_id)),
+        *client.services(drivvo_vehicle_id),
+        *client.expenses(drivvo_vehicle_id),
     ]
     for r in rows:
         date = _date_minutes(r.get("data"))
-        cost = float(r.get("valor_total") or 0)
-        if not date or not cost:
+        if not date:
             continue
-        raw_type = r.get("tipo_servico") or r.get("tipo_despesa")
-        desc = (r.get("descricao") or "").strip() or (raw_type or "").strip() or None
-        cur = conn.execute(
-            """INSERT OR IGNORE INTO expenses
-               (vehicle_id, date, odometer, category_id, description, cost,
-                source, source_uid)
-               VALUES (?,?,?,?,?,?,'drivvo_api',?)""",
-            (vehicle_id, date, r.get("odometro") or None,
-             _map_category(conn, raw_type), desc, cost,
-             str(r.get("id") or "") or None),
-        )
-        if cur.rowcount:
-            report.expenses_added += 1
-        else:
-            report.expenses_skipped += 1
+        odometer = r.get("odometro") or None
+        row_uid = r.get("id_despesa") or r.get("id_servico") or r.get("id")
+        for idx, (raw_type, cost, desc) in enumerate(_expense_entries(r)):
+            if not cost:
+                continue
+            # Dedup między źródłami (Fuelio CSV vs API): ten sam odometr i kwota,
+            # bo data potrafi różnić się o minutę, a opis wielkością liter.
+            if odometer and conn.execute(
+                "SELECT 1 FROM expenses WHERE vehicle_id=? AND odometer=? "
+                "AND ABS(cost-?) < 0.005",
+                    (vehicle_id, odometer, cost)).fetchone():
+                report.expenses_skipped += 1
+                continue
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO expenses
+                   (vehicle_id, date, odometer, category_id, description, cost,
+                    source, source_uid)
+                   VALUES (?,?,?,?,?,?,'drivvo_api',?)""",
+                (vehicle_id, date, odometer,
+                 _map_category(conn, raw_type), desc, cost,
+                 f"{row_uid}:{idx}" if row_uid else None),
+            )
+            if cur.rowcount:
+                report.expenses_added += 1
+            else:
+                report.expenses_skipped += 1
     conn.commit()
     return report
 

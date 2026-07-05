@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3
+
+- Import wydatków z Drivvo działa z realnym schematem web API: kwoty są
+  w zagnieżdżonej liście `tipos_despesa[].valor` (nie `valor_total`),
+  opis w `observacao`, id w `id_despesa`
+- Dedup wydatków między Fuelio CSV a API Drivvo po (odometr, kwota) —
+  daty różnią się o minutę, opisy wielkością liter
+- Kategoria „Płyny" mapowana na Eksploatację
+
 ## 0.1.2
 
 - Naprawa auto-wyboru pojazdu przy imporcie z Drivvo — API zwraca klucz
