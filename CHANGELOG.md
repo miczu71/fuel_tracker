@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Naprawa auto-wyboru pojazdu przy imporcie z Drivvo — API zwraca klucz
+  `id_veiculo`, nie `id` (KeyError przy `drivvo_vehicle_id: 0`)
+- `POST /api/import/drivvo` przyjmuje też `vehicle_id` w body żądania
+
 ## 0.1.1
 
 - MQTT bez konfiguracji: gdy `mqtt_user` jest puste, add-on pobiera dane brokera

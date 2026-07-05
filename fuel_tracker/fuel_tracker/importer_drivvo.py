@@ -191,7 +191,10 @@ def run_import(conn: sqlite3.Connection, vehicle_id: int, email: str,
         vehicles = client.vehicles()
         if not vehicles:
             raise DrivvoError("Brak pojazdów na koncie Drivvo")
-        drivvo_vehicle_id = vehicles[0]["id"]
+        # API zwraca pojazdy z kluczem 'id_veiculo' (starsze odpowiedzi: 'id')
+        drivvo_vehicle_id = vehicles[0].get("id_veiculo") or vehicles[0].get("id")
+        if not drivvo_vehicle_id:
+            raise DrivvoError(f"Brak id pojazdu w odpowiedzi Drivvo: {sorted(vehicles[0])}")
         logger.info("Drivvo: auto-wybrano pojazd id=%s", drivvo_vehicle_id)
 
     report = import_expenses(conn, vehicle_id, client, drivvo_vehicle_id)

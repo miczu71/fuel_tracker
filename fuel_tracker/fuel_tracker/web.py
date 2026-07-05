@@ -262,7 +262,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         try:
             result = importer_drivvo.run_import(
                 conn(), vehicle_id, email, password,
-                config.get("drivvo_vehicle_id", 0),
+                int(body.get("vehicle_id") or config.get("drivvo_vehicle_id", 0) or 0),
                 config.get("default_fuel_type", "PB95"),
                 include_refuellings=bool(body.get("include_refuellings")))
         except importer_drivvo.DrivvoError as exc:
