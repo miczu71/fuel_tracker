@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Fix: przycisk „Anuluj edycję" na stronie wydatków był widoczny od razu —
+  atrybut `hidden` przegrywał z `display` klasy `.btn` (globalny override
+  `[hidden] { display: none !important; }`)
+
 ## 0.2.0
 
 - **Stacje po GPS**: nowa tabela stacji (backfill z historii tankowań);
