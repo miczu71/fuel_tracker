@@ -144,7 +144,7 @@ window.FT = (function () {
         <td class="num">${fmt(f.odometer, 0)}</td>
         <td class="num">${fmt(f.volume_l)}</td>
         <td class="num">${fmt(f.price_per_l)}</td>
-        <td class="num">${fmt(f.total_cost)}${f.paid_by === "own" ? ' <span class="badge own">moje</span>' : ""}${f.currency && f.currency !== "PLN" ? ` <span class="badge">${f.currency}</span>` : ""}</td>
+        <td class="num">${fmt(f.total_cost)}${f.paid_by === "own" ? ' <span class="badge own">moje</span>' : ""}${f.currency && f.currency !== "PLN" ? ` <span class="badge">${f.total_cost_orig != null ? fmt(f.total_cost_orig) + " " : ""}${f.currency}</span>` : ""}</td>
         <td class="num">${f.consumption ? fmt(f.consumption) : "–"}</td>
         <td>${f.full_tank ? "✔" : "–"}${f.missed_previous ? " ⚠" : ""}</td>
         <td>${f.station || ""}</td>
@@ -188,12 +188,43 @@ window.FT = (function () {
     for (const el of [V, P, T])
       el.addEventListener("input", () => touch(el.name));
 
+    // Waluta: przy != PLN pola Cena/Kwota są w walucie oryginalnej,
+    // kurs NBP dociągany z api/rate (ręczna korekta możliwa).
+    const rateLabel = document.getElementById("rate-label");
+    const rateHint = document.getElementById("rate-hint");
+    const syncCurrency = async (keepRate) => {
+      const c = form.currency.value;
+      document.getElementById("cur-price").textContent = `(${c})`;
+      document.getElementById("cur-total").textContent = `(${c})`;
+      rateLabel.hidden = c === "PLN";
+      if (c === "PLN") { form.exchange_rate.value = ""; return; }
+      if (keepRate && form.exchange_rate.value) return;
+      rateHint.textContent = "(pobieram z NBP…)";
+      try {
+        const r = await getJSON(
+          `api/rate?currency=${c}&date=${form.date.value.slice(0, 10)}`);
+        form.exchange_rate.value = r.rate;
+        rateHint.textContent = `(NBP z ${r.effective_date})`;
+      } catch {
+        rateHint.textContent = "(NBP niedostępne — wpisz ręcznie)";
+      }
+    };
+    form.currency.addEventListener("change", () => syncCurrency(false));
+    form.date.addEventListener("change", () => syncCurrency(false));
+
     if (editId) {
       document.getElementById("form-title").textContent = "Edycja tankowania";
       const f = await getJSON(`api/fillups/${editId}`);
       form.date.value = f.date.replace(" ", "T");
       form.odometer.value = f.odometer;
-      V.value = f.volume_l; P.value = f.price_per_l; T.value = f.total_cost;
+      // Wpis zagraniczny edytujemy w walucie oryginalnej.
+      const foreign = f.currency && f.currency !== "PLN";
+      V.value = f.volume_l;
+      P.value = foreign ? (f.price_per_l_orig ?? f.price_per_l) : f.price_per_l;
+      T.value = foreign ? (f.total_cost_orig ?? f.total_cost) : f.total_cost;
+      form.currency.value = f.currency || "PLN";
+      if (foreign) form.exchange_rate.value = f.exchange_rate ?? "";
+      syncCurrency(true);
       form.full_tank.checked = !!f.full_tank;
       form.missed_previous.checked = !!f.missed_previous;
       form.paid_by.checked = f.paid_by === "own";
@@ -255,6 +286,8 @@ window.FT = (function () {
         paid_by: form.paid_by.checked ? "own" : "fleet_card",
         station: form.station.value, notes: form.notes.value,
         latitude: form.latitude.value, longitude: form.longitude.value,
+        currency: form.currency.value,
+        exchange_rate: form.exchange_rate.value,
       };
       try {
         if (editId) await sendJSON(`api/fillups/${editId}`, "PUT", body);
@@ -406,6 +439,116 @@ window.FT = (function () {
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   }
 
+  // ── Statystyki ──────────────────────────────────────────────────────────
+  async function initStatistics() {
+    const s = await getJSON("api/statistics");
+    const set = (id, v, d) =>
+      (document.getElementById(id).textContent = v == null ? "–" : fmt(v, d));
+    set("st-range", s.estimated_range_km, 0);
+    set("st-annual", s.leasing.projected_annual_km, 0);
+    set("st-lease", s.leasing.odo_vs_budget, 0);
+    set("st-region", s.region.latest ? s.region.latest.price : null);
+    document.getElementById("region-name").textContent = s.region.name;
+
+    if (s.leasing.km_limit) {
+      const card = document.getElementById("lease-card");
+      card.hidden = false;
+      const l = s.leasing;
+      document.getElementById("lease-text").textContent =
+        `Przebieg ${fmt(l.current_odometer, 0)} km z limitu ` +
+        `${fmt(l.km_limit, 0)} km.` +
+        (l.odo_vs_budget != null
+          ? ` Zapas względem krzywej leasingu: ${fmt(l.odo_vs_budget, 0)} km.`
+          : "") +
+        (l.limit_depletion_date
+          ? ` Przy obecnym tempie limit wyczerpie się ~${l.limit_depletion_date}.`
+          : "");
+    }
+
+    // Moja cena vs region — dwie serie na wspólnej osi czasu (dni).
+    const days = [...new Set([
+      ...s.price_series.map((p) => p.date.slice(0, 10)),
+      ...s.region.series.map((p) => p.date),
+    ])].sort();
+    const byDay = (series) => {
+      const m = Object.fromEntries(
+        series.map((p) => [p.date.slice(0, 10), p.value]));
+      return days.map((d) => m[d] ?? null);
+    };
+    const opts = baseChartOpts();
+    opts.spanGaps = true;
+    opts.plugins.legend = { display: true, position: "bottom" };
+    new Chart(document.getElementById("chart-vs-region"), {
+      type: "line",
+      data: {
+        labels: days,
+        datasets: [
+          { label: "Moja cena", data: byDay(s.price_series),
+            borderColor: css("--series-1"), backgroundColor: css("--series-1"),
+            borderWidth: 2, pointRadius: 2, tension: 0.25, spanGaps: true },
+          { label: `Region (${s.region.fuel_type})`, data: byDay(s.region.series),
+            borderColor: css("--series-2"), backgroundColor: css("--series-2"),
+            borderWidth: 2, pointRadius: 2, tension: 0.25, spanGaps: true,
+            borderDash: [6, 4] },
+        ],
+      },
+      options: opts,
+    });
+
+    const kmOpts = baseChartOpts();
+    kmOpts.scales.y.beginAtZero = true;
+    new Chart(document.getElementById("chart-km"), {
+      type: "bar",
+      data: {
+        labels: s.monthly_km.map((m) => m.month),
+        datasets: [{ label: "km", data: s.monthly_km.map((m) => m.km),
+          backgroundColor: css("--series-1"),
+          borderColor: css("--surface"), borderWidth: 1, borderRadius: 3 }],
+      },
+      options: kmOpts,
+    });
+
+    document.getElementById("split-chips").innerHTML = [
+      ["Karta ORLEN Flota", s.split.fuel_card],
+      ["Paliwo prywatne", s.split.fuel_own],
+      ["Płyny", s.split.fluids],
+      ["Inne wydatki", s.split.other_expenses],
+    ].map(([n, v]) => `<span class="chip">${n}: <b>${fmt(v, 0)} PLN</b></span>`)
+      .join("");
+
+    const r = s.records;
+    const seg = (x) => x
+      ? `${fmt(x.l_per_100km)} L/100km (${x.distance_km} km, ${x.date.slice(0, 10)})`
+      : "–";
+    const fill = (x) => x
+      ? `${fmt(x.price_per_l)} PLN/L (${x.station || "?"}, ${x.date.slice(0, 10)})`
+      : "–";
+    document.querySelector("#records-table tbody").innerHTML = [
+      ["Najlepsze spalanie", seg(r.best_consumption)],
+      ["Najgorsze spalanie", seg(r.worst_consumption)],
+      ["Najdłuższy dystans na baku", r.longest_segment
+        ? `${fmt(r.longest_segment.distance_km, 0)} km (${r.longest_segment.date.slice(0, 10)})` : "–"],
+      ["Najtańsze tankowanie", fill(r.cheapest_fillup)],
+      ["Najdroższe tankowanie", fill(r.most_expensive_fillup)],
+    ].map(([n, v]) => `<tr><td>${n}</td><td>${v}</td></tr>`).join("");
+
+    document.querySelector("#stations-table tbody").innerHTML =
+      s.stations.map((x) => `
+        <tr><td>${x.station}</td><td class="num">${x.visits}</td>
+        <td class="num">${fmt(x.volume_l, 1)}</td>
+        <td class="num">${fmt(x.total_cost, 0)}</td>
+        <td class="num">${x.avg_price != null ? fmt(x.avg_price) : "–"}</td></tr>`).join("");
+
+    document.querySelector("#report-table tbody").innerHTML =
+      s.monthly_report.map((m) => `
+        <tr><td>${m.month}</td><td class="num">${fmt(m.fuel_card)}</td>
+        <td class="num">${fmt(m.fuel_own)}</td>
+        <td class="num">${fmt(m.fluids)}</td>
+        <td class="num">${fmt(m.other_expenses)}</td>
+        <td class="num">${fmt(m.volume_l, 1)}</td>
+        <td class="num">${fmt(m.km, 0)}</td></tr>`).join("");
+  }
+
   // ── Ustawienia / import ─────────────────────────────────────────────────
   function initSettings() {
     const csvForm = document.getElementById("csv-form");
@@ -474,5 +617,5 @@ window.FT = (function () {
   }
 
   return { initDashboard, initFillups, initFillupForm, initExpenses,
-           initSettings, initMap };
+           initSettings, initMap, initStatistics };
 })();

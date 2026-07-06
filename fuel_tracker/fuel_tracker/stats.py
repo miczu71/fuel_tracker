@@ -8,7 +8,9 @@ Wpis z flagą missed_previous przerywa łańcuch (dystans niewiarygodny).
 """
 from __future__ import annotations
 
+from calendar import monthrange
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 
@@ -129,3 +131,157 @@ def monthly_series(fillups: list[dict], expenses: list[dict]) -> list[dict]:
 def month_fuel_spend(fillups: list[dict], month: str) -> float:
     """Wydatki na paliwo w miesiącu 'YYYY-MM'."""
     return round(sum(f["total_cost"] for f in fillups if f["date"][:7] == month), 2)
+
+
+# ── Statystyki rozszerzone (0.4.0): sensory + strona Statystyki ──────────────
+
+def estimated_range_km(avg_consumption: Optional[float],
+                       tank_capacity_l: float) -> Optional[int]:
+    """Zasięg na pełnym baku przy średnim spalaniu."""
+    if not avg_consumption or not tank_capacity_l:
+        return None
+    return round(100.0 * tank_capacity_l / avg_consumption)
+
+
+def ytd_fuel_cost(fillups: list[dict], year: str) -> float:
+    """Wydatki na paliwo od początku roku 'YYYY'."""
+    return round(sum(f["total_cost"] for f in fillups
+                     if f["date"][:4] == year), 2)
+
+
+def month_forecast_cost(fillups: list[dict], now: datetime) -> Optional[float]:
+    """Prognoza kosztu paliwa w bieżącym miesiącu (tempo dotychczasowe)."""
+    spent = month_fuel_spend(fillups, now.strftime("%Y-%m"))
+    if not spent:
+        return None
+    days_in_month = monthrange(now.year, now.month)[1]
+    return round(spent / now.day * days_in_month, 2)
+
+
+def projected_annual_km(fillups: list[dict]) -> Optional[int]:
+    """Roczne tempo przebiegu z całej historii (odometr vs czas)."""
+    dated = sorted((f for f in fillups if f["date"]), key=lambda f: f["date"])
+    if len(dated) < 2:
+        return None
+    try:
+        t0 = datetime.fromisoformat(dated[0]["date"].replace(" ", "T"))
+        t1 = datetime.fromisoformat(dated[-1]["date"].replace(" ", "T"))
+    except ValueError:
+        return None
+    days = (t1 - t0).total_seconds() / 86400
+    if days < 30:  # za krótka historia na sensowną ekstrapolację
+        return None
+    return round((dated[-1]["odometer"] - dated[0]["odometer"]) / days * 365)
+
+
+def station_ranking(fillups: list[dict]) -> list[dict]:
+    """Ranking stacji: wizyty, litry, suma, śr. cena — kolejność wg wizyt."""
+    by_station: dict[str, dict] = {}
+    for f in fillups:
+        name = (f.get("station") or "").strip()
+        if not name:
+            continue
+        d = by_station.setdefault(name, {
+            "station": name, "visits": 0, "volume_l": 0.0, "total_cost": 0.0})
+        d["visits"] += 1
+        d["volume_l"] += f["volume_l"]
+        d["total_cost"] += f["total_cost"]
+    out = sorted(by_station.values(),
+                 key=lambda d: (-d["visits"], d["station"]))
+    for d in out:
+        d["avg_price"] = round(d["total_cost"] / d["volume_l"], 2) \
+            if d["volume_l"] else None
+        d["volume_l"] = round(d["volume_l"], 1)
+        d["total_cost"] = round(d["total_cost"], 2)
+    return out
+
+
+def best_station(fillups: list[dict], min_visits: int = 2) -> Optional[str]:
+    """Stacja z najniższą średnią ceną litra (min. min_visits tankowań)."""
+    ranked = [s for s in station_ranking(fillups)
+              if s["visits"] >= min_visits and s["avg_price"]]
+    if not ranked:
+        return None
+    return min(ranked, key=lambda s: s["avg_price"])["station"]
+
+
+def record_entries(fillups: list[dict]) -> dict:
+    """Rekordy do strony Statystyki (None gdy za mało danych)."""
+    rows = [dict(f) for f in fillups]
+    segments = build_segments(
+        sorted(rows, key=lambda f: (f["odometer"], f["date"])))
+    valid = [s for s in segments if s.distance_km > 0 and s.volume_l > 0]
+    priced = [f for f in rows if f.get("price_per_l")]
+
+    def seg_dict(s: Segment) -> dict:
+        return {"date": s.end_date, "distance_km": s.distance_km,
+                "volume_l": s.volume_l,
+                "l_per_100km": round(s.l_per_100km, 2)}
+
+    return {
+        "best_consumption": seg_dict(min(valid, key=lambda s: s.l_per_100km))
+                            if valid else None,
+        "worst_consumption": seg_dict(max(valid, key=lambda s: s.l_per_100km))
+                             if valid else None,
+        "longest_segment": seg_dict(max(valid, key=lambda s: s.distance_km))
+                           if valid else None,
+        "cheapest_fillup": min(
+            ({"date": f["date"], "price_per_l": f["price_per_l"],
+              "station": f.get("station")} for f in priced),
+            key=lambda f: f["price_per_l"]) if priced else None,
+        "most_expensive_fillup": max(
+            ({"date": f["date"], "price_per_l": f["price_per_l"],
+              "station": f.get("station")} for f in priced),
+            key=lambda f: f["price_per_l"]) if priced else None,
+    }
+
+
+def monthly_km(fillups: list[dict]) -> list[dict]:
+    """Przebieg per miesiąc: różnica max odometrów kolejnych miesięcy."""
+    max_odo: dict[str, int] = {}
+    for f in fillups:
+        m = f["date"][:7]
+        max_odo[m] = max(max_odo.get(m, 0), f["odometer"])
+    months = sorted(max_odo)
+    out = []
+    for prev, cur in zip(months, months[1:]):
+        out.append({"month": cur, "km": max_odo[cur] - max_odo[prev]})
+    return out
+
+
+FLUIDS_CATEGORY = "Płyny"
+
+
+def monthly_report(fillups: list[dict], expenses: list[dict]) -> list[dict]:
+    """Raport miesięczny do weryfikacji zestawienia ORLEN Flota.
+
+    Kolumny: paliwo z karty / prywatne / płyny / inne wydatki / litry / km.
+    """
+    months: dict[str, dict] = {}
+
+    def row(m: str) -> dict:
+        return months.setdefault(m, {
+            "month": m, "fuel_card": 0.0, "fuel_own": 0.0, "fluids": 0.0,
+            "other_expenses": 0.0, "volume_l": 0.0, "km": 0})
+
+    for f in fillups:
+        d = row(f["date"][:7])
+        if f.get("paid_by") == "own":
+            d["fuel_own"] += f["total_cost"]
+        else:
+            d["fuel_card"] += f["total_cost"]
+        d["volume_l"] += f["volume_l"]
+    for e in expenses:
+        d = row(e["date"][:7])
+        key = "fluids" if e.get("category") == FLUIDS_CATEGORY \
+            else "other_expenses"
+        d[key] += e["cost"]
+    for k in monthly_km(fillups):
+        row(k["month"])["km"] = k["km"]
+
+    out = sorted(months.values(), key=lambda d: d["month"], reverse=True)
+    for d in out:
+        for key in ("fuel_card", "fuel_own", "fluids", "other_expenses"):
+            d[key] = round(d[key], 2)
+        d["volume_l"] = round(d["volume_l"], 1)
+    return out

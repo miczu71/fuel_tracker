@@ -9,7 +9,7 @@ from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import __version__, csv_fuelio, db as dbm, ha_client, queries
+from . import __version__, csv_fuelio, db as dbm, ha_client, prices, queries
 from .publisher import MQTTPublisher
 from .web import create_app
 
@@ -79,12 +79,13 @@ def main() -> None:
     default_fuel = _env("DEFAULT_FUEL_TYPE", "PB95")
     budget = float(_env("MONTHLY_FUEL_BUDGET", "0") or 0)
     vehicle_name = _env("VEHICLE_NAME", "Skoda Superb")
+    price_region = _env("PRICE_REGION", "dolnośląskie")
+    tank_capacity = float(_env("TANK_CAPACITY_L", "66") or 66)
 
     conn = dbm.get_conn(db_path)
     dbm.migrate(conn)
-    vehicle_id = dbm.ensure_vehicle(
-        conn, vehicle_name, float(_env("TANK_CAPACITY_L", "66") or 66),
-        default_fuel)
+    vehicle_id = dbm.ensure_vehicle(conn, vehicle_name, tank_capacity,
+                                    default_fuel)
     conn.close()
 
     auto_import_share(db_path, vehicle_id, share_dir, default_fuel)
@@ -115,14 +116,28 @@ def main() -> None:
     def publish_sensors() -> None:
         c = dbm.get_conn(db_path)
         try:
-            mqtt_pub.publish(queries.sensor_values(c, vehicle_id, budget))
+            mqtt_pub.publish(queries.sensor_values(
+                c, vehicle_id, budget, fuel_type=default_fuel,
+                price_region=price_region, tank_capacity_l=tank_capacity))
         except Exception:
             logger.exception("Publikacja MQTT nieudana")
         finally:
             c.close()
 
+    def refresh_prices() -> None:
+        c = dbm.get_conn(db_path)
+        try:
+            if prices.refresh(c, price_region):
+                publish_sensors()
+        except Exception:
+            logger.exception("Odświeżenie cen paliw nieudane")
+        finally:
+            c.close()
+
     scheduler = BackgroundScheduler(timezone=_env("TZ", "Europe/Warsaw"))
     scheduler.add_job(publish_sensors, "interval", minutes=15,
+                      next_run_time=datetime.now())
+    scheduler.add_job(refresh_prices, "interval", hours=6,
                       next_run_time=datetime.now())
     scheduler.add_job(backup_db, "cron", hour=3, minute=15,
                       args=[db_path, share_dir])
@@ -141,6 +156,10 @@ def main() -> None:
             "drivvo_password": _env("DRIVVO_PASSWORD"),
             "drivvo_vehicle_id": int(_env("DRIVVO_VEHICLE_ID", "0") or 0),
             "vehicle_name": vehicle_name,
+            "price_region": price_region,
+            "tank_capacity_l": tank_capacity,
+            "odo_budget_entity": _env("ODO_BUDGET_ENTITY"),
+            "lease_km_limit": int(_env("LEASE_KM_LIMIT", "0") or 0),
         },
         on_data_change=publish_sensors,
         ha_state=ha_client.get_state,

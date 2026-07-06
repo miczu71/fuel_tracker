@@ -52,6 +52,14 @@ _SENSORS: list[_Sensor] = [
     _Sensor("budget_left_month",    "Budget Left Month",    "PLN",      "monetary", "total",            "mdi:piggy-bank"),
     _Sensor("month_fuel_cost",      "Month Fuel Cost",      "PLN",      "monetary", "total",            "mdi:calendar-today"),
     _Sensor("self_paid_fuel_total", "Self Paid Fuel Total", "PLN",      "monetary", "total",            "mdi:account-cash"),
+    # 0.4.0 — ceny regionalne + statystyki
+    _Sensor("region_fuel_price",    "Region Fuel Price",    "PLN/L",    None,       "measurement",      "mdi:gas-station-in-use"),
+    _Sensor("price_vs_region",      "Price Vs Region",      "PLN/L",    None,       "measurement",      "mdi:scale-balance"),
+    _Sensor("estimated_range_km",   "Estimated Range",      "km",       "distance", "measurement",      "mdi:map-marker-path"),
+    _Sensor("month_forecast_cost",  "Month Forecast Cost",  "PLN",      "monetary", "total",            "mdi:chart-timeline-variant"),
+    _Sensor("ytd_fuel_cost",        "YTD Fuel Cost",        "PLN",      "monetary", "total",            "mdi:calendar-range"),
+    _Sensor("projected_annual_km",  "Projected Annual Km",  "km",       "distance", "measurement",      "mdi:speedometer"),
+    _Sensor("best_station",         "Best Station",         None,       None,       None,               "mdi:trophy"),
 ]
 
 

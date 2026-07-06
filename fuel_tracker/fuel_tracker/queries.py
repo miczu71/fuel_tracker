@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import stats as st
+from . import prices as pr, stats as st
 
 
 def fetch_fillups(conn: sqlite3.Connection, vehicle_id: int,
@@ -38,12 +38,15 @@ def _iso_local(date_str: str) -> str | None:
 
 
 def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
-                  monthly_budget: float, now: datetime | None = None) -> dict:
+                  monthly_budget: float, now: datetime | None = None,
+                  fuel_type: str = "PB95", price_region: str | None = None,
+                  tank_capacity_l: float = 0.0) -> dict:
     """Wartości dla publishera MQTT (slugi z publisher._SENSORS)."""
     fillups = fetch_fillups(conn, vehicle_id)
     expenses = fetch_expenses(conn, vehicle_id)
     s = st.compute_stats(fillups)
-    month = (now or datetime.now()).strftime("%Y-%m")
+    now = now or datetime.now()
+    month = now.strftime("%Y-%m")
     month_cost = st.month_fuel_spend(fillups, month)
 
     values: dict = {
@@ -63,7 +66,21 @@ def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
         "self_paid_fuel_total": round(sum(
             f["total_cost"] for f in fillups
             if f.get("paid_by") == "own"), 2),
+        # Statystyki 0.4.0
+        "estimated_range_km": st.estimated_range_km(s.avg_consumption,
+                                                    tank_capacity_l),
+        "month_forecast_cost": st.month_forecast_cost(fillups, now),
+        "ytd_fuel_cost": st.ytd_fuel_cost(fillups, now.strftime("%Y")),
+        "projected_annual_km": st.projected_annual_km(fillups),
+        "best_station": st.best_station(fillups),
     }
+    if price_region:
+        region = pr.latest_price(conn, price_region, fuel_type)
+        values["region_fuel_price"] = region["price"] if region else None
+        values["price_vs_region"] = round(
+            s.last_fillup["price_per_l"] - region["price"], 2) \
+            if region and s.last_fillup and s.last_fillup["price_per_l"] \
+            else None
     if s.last_fillup:
         f = s.last_fillup
         values.update({

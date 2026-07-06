@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.0
+
+> Numeracja zgodna z roadmapą: 0.3.0 (parser paragonów LLM vision)
+> celowo przełożony na później — funkcje 0.4.0 weszły pierwsze.
+
+- **Tankowania za granicą**: wybór waluty w formularzu (EUR, CZK, HUF, CHF…;
+  domyślnie PLN — zero dodatkowych kliknięć w kraju); kurs średni NBP
+  (tabela A, ostatni sprzed daty tankowania) dociągany automatycznie,
+  z możliwością ręcznej korekty; statystyki i sensory zawsze w PLN,
+  kwota oryginalna zachowana i widoczna na liście; cache kursów w SQLite
+  (migracja #3), awaryjnie ostatni znany kurs
+- **Ceny regionalne paliw**: scraper autocentrum.pl (tabela wojewódzka,
+  opcja `price_region`, domyślnie dolnośląskie) co 6 h do tabeli
+  `fuel_prices` (retencja 400 dni); sensory `region_fuel_price`
+  i `price_vs_region` (moja ostatnia cena vs region)
+- **Strona „Statystyki"**: zasięg na baku, tempo roczne km, moja cena vs
+  region (wykres), przebieg miesięczny, podział kosztów (karta ORLEN
+  Flota / prywatne / płyny / inne), rekordy (najlepsze/najgorsze spalanie,
+  najdłuższy dystans na baku, najtańsze/najdroższe tankowanie), ranking
+  stacji, raport miesięczny z eksportem CSV (`/api/report.csv`)
+- **Leasing**: zapas km z `sensor.odo_vs_budget` (opcja
+  `odo_budget_entity`) + prognoza daty wyczerpania limitu (opcja
+  `lease_km_limit`, domyślnie 90 000 km) przy obecnym tempie
+- **5 nowych sensorów statystyk**: `estimated_range_km`,
+  `month_forecast_cost`, `ytd_fuel_cost`, `projected_annual_km`,
+  `best_station` (24 sensory łącznie)
+- Nowe endpointy API: `GET /api/rate`, `GET /api/statistics`,
+  `GET /api/report.csv`
+- Nowe opcje add-onu: `price_region`, `odo_budget_entity`, `lease_km_limit`
+
 ## 0.2.1
 
 - Fix: przycisk „Anuluj edycję" na stronie wydatków był widoczny od razu —

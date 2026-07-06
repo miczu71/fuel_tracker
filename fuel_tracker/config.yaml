@@ -1,5 +1,5 @@
 name: Fuel Tracker
-version: "0.2.1"
+version: "0.4.0"
 slug: fuel_tracker
 description: >-
   Dziennik tankowań i wydatków samochodu w stylu Fuelio.
@@ -27,6 +27,9 @@ options:
   odometer_entity: "sensor.skoda_superb_mileage"
   fuel_level_entity: "sensor.skoda_superb_fuel_level"
   location_entity: "device_tracker.op12"
+  price_region: "dolnośląskie"
+  odo_budget_entity: "sensor.odo_vs_budget"
+  lease_km_limit: 90000
   drivvo_email: ""
   drivvo_password: ""
   drivvo_vehicle_id: 0
@@ -46,6 +49,9 @@ schema:
   odometer_entity: str
   fuel_level_entity: str
   location_entity: str?
+  price_region: str?
+  odo_budget_entity: str?
+  lease_km_limit: int?
   drivvo_email: str
   drivvo_password: password
   drivvo_vehicle_id: int

@@ -14,14 +14,24 @@
     <label>Litry
       <input type="number" name="volume_l" inputmode="decimal" step="0.01" min="0">
     </label>
-    <label>Cena/L
+    <label>Cena/L <span id="cur-price">(PLN)</span>
       <input type="number" name="price_per_l" inputmode="decimal" step="0.01" min="0">
     </label>
-    <label>Kwota (PLN)
+    <label>Kwota <span id="cur-total">(PLN)</span>
       <input type="number" name="total_cost" inputmode="decimal" step="0.01" min="0">
     </label>
   </div>
   <p class="muted">Wypełnij dowolne 2 z 3 pól — trzecie wyliczy się samo.</p>
+  <div class="row3">
+    <label>Waluta
+      <select name="currency">
+        {% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+    <label id="rate-label" hidden>Kurs (PLN) <span class="muted" id="rate-hint"></span>
+      <input type="number" name="exchange_rate" inputmode="decimal" step="0.0001" min="0">
+    </label>
+  </div>
   <label class="check">
     <input type="checkbox" name="full_tank" checked> Pełny bak
   </label>

@@ -226,7 +226,7 @@ def test_category_hide_toggle(client):
 def test_pages_render_without_absolute_urls(client):
     # Ingress: żadnych href/src zaczynających się od "/" (poza X-Ingress-Path).
     for path in ("/", "/fillups", "/fillup-form", "/expenses", "/settings",
-                 "/map"):
+                 "/map", "/statistics"):
         r = client.get(path, headers={"X-Ingress-Path": "/api/hassio_ingress/tok"})
         assert r.status_code == 200
         html = r.data.decode()

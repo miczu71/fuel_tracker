@@ -104,6 +104,18 @@ _MIGRATIONS = [
     WHERE station IS NOT NULL AND TRIM(station) != ''
     GROUP BY station;
     """,
+    # v3 — cache kursów NBP (waluty aktywne od 0.4.0); klucz to data
+    # tankowania (req_date), bo NBP nie publikuje kursów w dni wolne
+    # i effective_date bywa wcześniejsza.
+    """
+    CREATE TABLE exchange_rates (
+        code TEXT NOT NULL,
+        req_date TEXT NOT NULL,
+        rate REAL NOT NULL,
+        effective_date TEXT NOT NULL,
+        PRIMARY KEY (code, req_date)
+    );
+    """,
 ]
 
 

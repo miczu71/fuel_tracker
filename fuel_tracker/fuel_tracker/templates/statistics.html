@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set active = 'statistics' %}
+{% block title %}Statystyki{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Statystyki</h1></div>
+
+<div class="grid stats">
+  <div class="card stat"><span class="stat-label">Zasięg na baku</span><span class="stat-value" id="st-range">–</span><span class="stat-unit">km</span></div>
+  <div class="card stat"><span class="stat-label">Tempo roczne</span><span class="stat-value" id="st-annual">–</span><span class="stat-unit">km/rok</span></div>
+  <div class="card stat"><span class="stat-label">Zapas km leasingu</span><span class="stat-value" id="st-lease">–</span><span class="stat-unit">km</span></div>
+  <div class="card stat"><span class="stat-label">Cena w regionie</span><span class="stat-value" id="st-region">–</span><span class="stat-unit">PLN/L</span></div>
+</div>
+
+<div class="card" id="lease-card" hidden>
+  <div class="card-title">Leasing</div>
+  <p id="lease-text" class="muted"></p>
+</div>
+
+<div class="card">
+  <div class="card-title">Moja cena vs region (<span id="region-name"></span>)</div>
+  <div class="chart-wrap"><canvas id="chart-vs-region"></canvas></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Przebieg miesięczny</div>
+  <div class="chart-wrap"><canvas id="chart-km"></canvas></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Podział kosztów</div>
+  <div id="split-chips" class="chips"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Rekordy</div>
+  <div class="table-wrap"><table class="table" id="records-table"><tbody></tbody></table></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Ranking stacji</div>
+  <div class="table-wrap"><table class="table" id="stations-table">
+    <thead><tr><th>Stacja</th><th class="num">Wizyty</th><th class="num">Litry</th>
+    <th class="num">Wydano</th><th class="num">Śr. cena</th></tr></thead>
+    <tbody></tbody></table></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Raport miesięczny
+    <a class="btn" id="report-csv" href="{{ base }}/api/report.csv">Eksport CSV</a>
+  </div>
+  <div class="table-wrap"><table class="table" id="report-table">
+    <thead><tr><th>Miesiąc</th><th class="num">Karta</th><th class="num">Prywatne</th>
+    <th class="num">Płyny</th><th class="num">Inne</th><th class="num">Litry</th>
+    <th class="num">Km</th></tr></thead>
+    <tbody></tbody></table></div>
+</div>
+{% endblock %}
+{% block scripts %}<script>FT.initStatistics();</script>{% endblock %}
