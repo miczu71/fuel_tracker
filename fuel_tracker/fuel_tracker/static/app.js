@@ -144,7 +144,7 @@ window.FT = (function () {
         <td class="num">${fmt(f.odometer, 0)}</td>
         <td class="num">${fmt(f.volume_l)}</td>
         <td class="num">${fmt(f.price_per_l)}</td>
-        <td class="num">${fmt(f.total_cost)}</td>
+        <td class="num">${fmt(f.total_cost)}${f.paid_by === "own" ? ' <span class="badge own">moje</span>' : ""}${f.currency && f.currency !== "PLN" ? ` <span class="badge">${f.currency}</span>` : ""}</td>
         <td class="num">${f.consumption ? fmt(f.consumption) : "–"}</td>
         <td>${f.full_tank ? "✔" : "–"}${f.missed_previous ? " ⚠" : ""}</td>
         <td>${f.station || ""}</td>
@@ -196,8 +196,11 @@ window.FT = (function () {
       V.value = f.volume_l; P.value = f.price_per_l; T.value = f.total_cost;
       form.full_tank.checked = !!f.full_tank;
       form.missed_previous.checked = !!f.missed_previous;
+      form.paid_by.checked = f.paid_by === "own";
       form.station.value = f.station || "";
       form.notes.value = f.notes || "";
+      form.latitude.value = f.latitude ?? "";
+      form.longitude.value = f.longitude ?? "";
     } else {
       const pre = await getJSON("api/prefill");
       form.date.value = pre.date;
@@ -207,18 +210,37 @@ window.FT = (function () {
       }
       if (pre.station) form.station.value = pre.station;
       if (pre.price_per_l) P.value = pre.price_per_l;
+      const gps = document.getElementById("gps-hint");
+      if (pre.latitude != null) {
+        form.latitude.value = pre.latitude;
+        form.longitude.value = pre.longitude;
+        if (pre.station_matched) {
+          gps.textContent = "(dopasowana po GPS)";
+        } else {
+          // Brak zapisanej stacji w pobliżu — spytaj OSM o sugestie.
+          gps.textContent = "(szukam stacji w pobliżu…)";
+          getJSON(`api/stations/nearby?lat=${pre.latitude}&lon=${pre.longitude}`)
+            .then((near) => {
+              if (near.length && !form.station.value) {
+                form.station.value = near[0].name;
+                gps.textContent = `(z OSM, ${near[0].distance_m} m)`;
+              } else if (near.length) {
+                gps.textContent = `(w pobliżu: ${near.map((n) => n.name).slice(0, 3).join(", ")})`;
+              } else {
+                gps.textContent = "";
+              }
+            })
+            .catch(() => { gps.textContent = ""; });
+        }
+      }
     }
 
-    const stations = await getJSON("api/fillups");
-    const seen = new Set();
+    const stations = await getJSON("api/stations");
     const dl = document.getElementById("stations");
-    for (const f of stations) {
-      if (f.station && !seen.has(f.station)) {
-        seen.add(f.station);
-        const o = document.createElement("option");
-        o.value = f.station;
-        dl.appendChild(o);
-      }
+    for (const s of stations) {
+      const o = document.createElement("option");
+      o.value = s.name;
+      dl.appendChild(o);
     }
 
     form.addEventListener("submit", async (e) => {
@@ -230,7 +252,9 @@ window.FT = (function () {
         volume_l: V.value, price_per_l: P.value, total_cost: T.value,
         full_tank: form.full_tank.checked,
         missed_previous: form.missed_previous.checked,
+        paid_by: form.paid_by.checked ? "own" : "fleet_card",
         station: form.station.value, notes: form.notes.value,
+        latitude: form.latitude.value, longitude: form.longitude.value,
       };
       try {
         if (editId) await sendJSON(`api/fillups/${editId}`, "PUT", body);
@@ -249,52 +273,137 @@ window.FT = (function () {
       getJSON("api/categories"), getJSON("api/expenses"),
     ]);
     const sel = document.getElementById("category-select");
-    sel.innerHTML = cats.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
-
-    const totals = {};
-    for (const e of rows)
-      totals[e.category || "Inne"] = (totals[e.category || "Inne"] || 0) + e.cost;
-    document.getElementById("category-totals").innerHTML =
-      Object.entries(totals).sort((a, b) => b[1] - a[1])
-        .map(([n, v]) => `<span class="chip">${n}: <b>${fmt(v, 0)} PLN</b></span>`)
-        .join("") || '<span class="muted">Brak wydatków</span>';
-
-    const tbody = document.querySelector("#expenses-table tbody");
-    tbody.innerHTML = rows.map((e) => `
-      <tr>
-        <td>${e.date}</td><td>${e.category || ""}</td>
-        <td>${e.description || ""}</td>
-        <td class="num">${fmt(e.cost)}</td>
-        <td><button class="btn danger" data-del="${e.id}">Usuń</button></td>
-      </tr>`).join("");
-    tbody.addEventListener("click", async (ev) => {
-      const id = ev.target.dataset && ev.target.dataset.del;
-      if (!id || !confirm("Usunąć wydatek?")) return;
-      await fetch(`api/expenses/${id}`, { method: "DELETE" });
-      initExpenses();
-    });
+    sel.innerHTML = cats.filter((c) => !c.hidden)
+      .map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+    const catByName = Object.fromEntries(cats.map((c) => [c.name, c.id]));
 
     const form = document.getElementById("expense-form");
+    const submitBtn = document.getElementById("expense-submit");
+    const cancelBtn = document.getElementById("expense-cancel");
+    const tbody = document.querySelector("#expenses-table tbody");
+    let editId = null;
+    let byId = {};
+
+    const resetForm = () => {
+      editId = null;
+      form.reset();
+      form.date.value = new Date().toISOString().slice(0, 16);
+      submitBtn.textContent = "Dodaj wydatek";
+      cancelBtn.hidden = true;
+    };
+
+    const render = (list) => {
+      byId = Object.fromEntries(list.map((e) => [String(e.id), e]));
+      const totals = {};
+      for (const e of list)
+        totals[e.category || "Inne"] = (totals[e.category || "Inne"] || 0) + e.cost;
+      document.getElementById("category-totals").innerHTML =
+        Object.entries(totals).sort((a, b) => b[1] - a[1])
+          .map(([n, v]) => `<span class="chip">${n}: <b>${fmt(v, 0)} PLN</b></span>`)
+          .join("") || '<span class="muted">Brak wydatków</span>';
+      tbody.innerHTML = list.map((e) => `
+        <tr>
+          <td>${e.date}</td><td>${e.category || ""}</td>
+          <td>${e.description || ""}</td>
+          <td class="num">${fmt(e.cost)}</td>
+          <td>
+            <button class="btn" data-edit="${e.id}">Edytuj</button>
+            <button class="btn danger" data-del="${e.id}">Usuń</button>
+          </td>
+        </tr>`).join("");
+    };
+
+    const reload = async () => render(await getJSON("api/expenses"));
+    render(rows);
     form.date.value = new Date().toISOString().slice(0, 16);
+
+    tbody.addEventListener("click", async (ev) => {
+      const ds = ev.target.dataset || {};
+      if (ds.del) {
+        if (!confirm("Usunąć wydatek?")) return;
+        await fetch(`api/expenses/${ds.del}`, { method: "DELETE" });
+        if (editId === ds.del) resetForm();
+        reload();
+      } else if (ds.edit) {
+        const e = byId[ds.edit];
+        if (!e) return;
+        editId = ds.edit;
+        form.date.value = e.date.replace(" ", "T");
+        form.cost.value = e.cost;
+        form.odometer.value = e.odometer ?? "";
+        // Kategoria ukryta nie jest w select — dołóż ją tymczasowo.
+        if (e.category && !catByName[e.category]) catByName[e.category] = e.category_id;
+        if (e.category_id && !sel.querySelector(`option[value="${e.category_id}"]`))
+          sel.insertAdjacentHTML("beforeend",
+            `<option value="${e.category_id}">${e.category}</option>`);
+        form.category_id.value = e.category_id ?? "";
+        form.description.value = e.description || "";
+        submitBtn.textContent = "Zapisz zmiany";
+        cancelBtn.hidden = false;
+        form.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+
+    cancelBtn.addEventListener("click", resetForm);
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const errEl = document.getElementById("expense-error");
       errEl.hidden = true;
+      const body = {
+        date: form.date.value, cost: form.cost.value,
+        odometer: form.odometer.value,
+        category_id: form.category_id.value,
+        description: form.description.value,
+      };
       try {
-        await sendJSON("api/expenses", "POST", {
-          date: form.date.value, cost: form.cost.value,
-          odometer: form.odometer.value,
-          category_id: form.category_id.value,
-          description: form.description.value,
-        });
-        form.reset();
-        form.date.value = new Date().toISOString().slice(0, 16);
-        initExpenses();
+        if (editId) await sendJSON(`api/expenses/${editId}`, "PUT", body);
+        else await sendJSON("api/expenses", "POST", body);
+        resetForm();
+        reload();
       } catch (ex) {
         errEl.textContent = ex.message;
         errEl.hidden = false;
       }
     });
+  }
+
+  // ── Mapa tankowań ───────────────────────────────────────────────────────
+  async function initMap() {
+    const data = (await getJSON("api/map-data"))
+      .filter((s) => s.latitude != null && s.longitude != null);
+    const el = document.getElementById("map");
+    if (!data.length) {
+      el.innerHTML = '<p class="muted" style="padding:16px">Brak stacji ze ' +
+        "współrzędnymi — dodaj tankowanie z telefonu (GPS) albo uzupełnij " +
+        "pozycję w formularzu.</p>";
+      return;
+    }
+    const map = L.map(el);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+    const maxVisits = Math.max(...data.map((s) => s.visits), 1);
+    const bounds = [];
+    for (const s of data) {
+      // Zagranica > prywatne > flota (stacja może mieć różne wpisy).
+      const color = s.foreign_cnt > 0 ? css("--series-3")
+        : s.own_paid > 0 ? css("--series-2") : css("--series-1");
+      const radius = 8 + 12 * Math.sqrt(s.visits / maxVisits);
+      L.circleMarker([s.latitude, s.longitude], {
+        radius, color, fillColor: color, fillOpacity: 0.55, weight: 2,
+      }).addTo(map).bindPopup(`
+        <b>${s.name}</b>${s.brand ? ` <span>(${s.brand})</span>` : ""}<br>
+        Wizyty: <b>${s.visits}</b><br>
+        Wydano: <b>${fmt(s.total_cost, 0)} PLN</b><br>
+        Śr. cena: <b>${fmt(s.avg_price)} PLN/L</b><br>
+        Ostatnio: ${s.last_date ? s.last_date.slice(0, 10) : "–"}
+        ${s.own_paid ? `<br>Prywatne tankowania: ${s.own_paid}` : ""}
+        ${s.country !== "PL" ? `<br>Kraj: ${s.country}` : ""}`);
+      bounds.push([s.latitude, s.longitude]);
+    }
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   }
 
   // ── Ustawienia / import ─────────────────────────────────────────────────
@@ -324,6 +433,23 @@ window.FT = (function () {
       rep.textContent = JSON.stringify(await r.json(), null, 2);
     });
 
+    const catList = document.getElementById("category-list");
+    const renderCats = async () => {
+      const cats = await getJSON("api/categories");
+      catList.innerHTML = cats.map((c) => `
+        <label class="chip check">
+          <input type="checkbox" data-cat="${c.id}" ${c.hidden ? "" : "checked"}>
+          ${c.name}
+        </label>`).join("");
+    };
+    renderCats();
+    catList.addEventListener("change", async (e) => {
+      const id = e.target.dataset && e.target.dataset.cat;
+      if (!id) return;
+      await sendJSON(`api/categories/${id}`, "PUT",
+        { hidden: !e.target.checked });
+    });
+
     document.getElementById("verify-btn").addEventListener("click", async () => {
       const out = document.getElementById("verify-result");
       out.innerHTML = '<span class="muted">Sprawdzam…</span>';
@@ -347,5 +473,6 @@ window.FT = (function () {
     });
   }
 
-  return { initDashboard, initFillups, initFillupForm, initExpenses, initSettings };
+  return { initDashboard, initFillups, initFillupForm, initExpenses,
+           initSettings, initMap };
 })();

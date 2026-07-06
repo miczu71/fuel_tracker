@@ -113,9 +113,120 @@ def test_verify_endpoint(client):
     assert set(v["checks"]) == {"count", "cost", "volume"}
 
 
+def test_fillup_paid_by_roundtrip(client):
+    fid = _add_fillup(client, paid_by="own", latitude=51.11, longitude=16.98
+                      ).get_json()["id"]
+    row = client.get(f"/api/fillups/{fid}").get_json()
+    assert row["paid_by"] == "own"
+    assert row["latitude"] == 51.11
+    # Domyślnie karta flotowa.
+    fid2 = _add_fillup(client, date="2025-02-01T12:00", odometer=1500
+                       ).get_json()["id"]
+    assert client.get(f"/api/fillups/{fid2}").get_json()["paid_by"] == "fleet_card"
+
+
+def test_self_paid_total_in_summary(client):
+    _add_fillup(client)  # fleet_card, 240 PLN
+    _add_fillup(client, date="2025-02-01T12:00", odometer=1500, paid_by="own")
+    s = client.get("/api/summary").get_json()
+    assert s["self_paid_fuel_total"] == 240.0
+
+
+def test_odometer_monotonic_validation(client):
+    _add_fillup(client)  # 2025-01-01, odo 1000
+    # Późniejsza data z mniejszym przebiegiem → 400.
+    r = _add_fillup(client, date="2025-02-01T12:00", odometer=900)
+    assert r.status_code == 400
+    assert "mniejszy" in r.get_json()["error"]
+    # Wcześniejsza data z większym przebiegiem → 400.
+    r = _add_fillup(client, date="2024-12-01T12:00", odometer=1100)
+    assert r.status_code == 400
+    # missed_previous wyłącza kontrolę.
+    r = _add_fillup(client, date="2025-02-01T12:00", odometer=900,
+                    missed_previous=True)
+    assert r.status_code == 201
+
+
+def test_fillup_saves_station(client):
+    _add_fillup(client, station="Orlen Legnicka",
+                latitude=51.1152, longitude=16.9812)
+    rows = client.get("/api/stations").get_json()
+    s = next(x for x in rows if x["name"] == "Orlen Legnicka")
+    assert s["latitude"] == 51.1152
+
+
+def test_map_data_endpoint(client):
+    _add_fillup(client, station="Orlen Legnicka",
+                latitude=51.1152, longitude=16.9812, paid_by="own")
+    data = client.get("/api/map-data").get_json()
+    s = next(x for x in data if x["name"] == "Orlen Legnicka")
+    assert s["visits"] == 1 and s["own_paid"] == 1
+
+
+def test_stations_nearby_requires_coords(client):
+    assert client.get("/api/stations/nearby").status_code == 400
+    assert client.get("/api/stations/nearby?lat=x&lon=y").status_code == 400
+
+
+def test_prefill_matches_station_by_gps(tmp_path):
+    db_path = str(tmp_path / "gps.db")
+    c = dbm.get_conn(db_path)
+    dbm.migrate(c)
+    vid = dbm.ensure_vehicle(c, "T", 66.0, "PB95")
+    c.execute("INSERT INTO stations (name, latitude, longitude) "
+              "VALUES ('Orlen Legnicka', 51.1152, 16.9812)")
+    c.commit()
+    c.close()
+
+    def ha_state(entity):
+        if entity == "device_tracker.op12":
+            return {"state": "not_home",
+                    "attributes": {"latitude": 51.1153, "longitude": 16.9813}}
+        return {"state": "31468"}
+
+    app = create_app(
+        db_path=db_path, vehicle_id=vid,
+        config={"default_fuel_type": "PB95", "vehicle_name": "T",
+                "odometer_entity": "sensor.odo",
+                "location_entity": "device_tracker.op12"},
+        ha_state=ha_state)
+    app.testing = True
+    pre = app.test_client().get("/api/prefill").get_json()
+    assert pre["station"] == "Orlen Legnicka"
+    assert pre["station_matched"] is True
+    assert pre["latitude"] == 51.1153
+
+
+def test_expense_edit(client):
+    cats = client.get("/api/categories").get_json()
+    plyny = next(c["id"] for c in cats if c["name"] == "Płyny")
+    eid = client.post("/api/expenses", json={
+        "date": "2025-01-10T09:00", "cost": 50,
+        "category_id": plyny, "description": "AdBlue"}).get_json()["id"]
+    r = client.put(f"/api/expenses/{eid}", json={
+        "date": "2025-01-10T09:00", "cost": 65.5,
+        "category_id": plyny, "description": "AdBlue 10L"})
+    assert r.status_code == 200
+    row = client.get("/api/expenses").get_json()[0]
+    assert row["cost"] == 65.5 and row["description"] == "AdBlue 10L"
+    assert client.put("/api/expenses/9999", json={
+        "date": "2025-01-10T09:00", "cost": 1}).status_code == 404
+
+
+def test_category_hide_toggle(client):
+    cats = client.get("/api/categories").get_json()
+    assert all(c["hidden"] == 0 for c in cats)
+    serwis = next(c["id"] for c in cats if c["name"] == "Serwis")
+    assert client.put(f"/api/categories/{serwis}",
+                      json={"hidden": True}).status_code == 200
+    cats = client.get("/api/categories").get_json()
+    assert next(c for c in cats if c["id"] == serwis)["hidden"] == 1
+
+
 def test_pages_render_without_absolute_urls(client):
     # Ingress: żadnych href/src zaczynających się od "/" (poza X-Ingress-Path).
-    for path in ("/", "/fillups", "/fillup-form", "/expenses", "/settings"):
+    for path in ("/", "/fillups", "/fillup-form", "/expenses", "/settings",
+                 "/map"):
         r = client.get(path, headers={"X-Ingress-Path": "/api/hassio_ingress/tok"})
         assert r.status_code == 200
         html = r.data.decode()

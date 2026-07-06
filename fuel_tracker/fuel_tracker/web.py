@@ -10,7 +10,8 @@ from typing import Callable, Optional
 
 from flask import Flask, Response, g, jsonify, render_template, request
 
-from . import csv_fuelio, db as dbm, importer_drivvo, queries, stats as st
+from . import (csv_fuelio, db as dbm, importer_drivvo, queries,
+               stations as stn, stats as st)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,11 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         return render_template("fillup_form.html", base=base(),
                                vehicle=config.get("vehicle_name", ""),
                                edit_id=request.args.get("id", ""))
+
+    @app.get("/map")
+    def page_map():
+        return render_template("map.html", base=base(),
+                               vehicle=config.get("vehicle_name", ""))
 
     @app.get("/expenses")
     def page_expenses():
@@ -124,42 +130,85 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             "fuel_type": data.get("fuel_type") or config.get("default_fuel_type", "PB95"),
             "station": (data.get("station") or "").strip() or None,
             "notes": (data.get("notes") or "").strip() or None,
+            "paid_by": "own" if data.get("paid_by") in ("own", 1, "1", True, "true", "on") else "fleet_card",
+            "latitude": float(data["latitude"]) if data.get("latitude") not in (None, "") else None,
+            "longitude": float(data["longitude"]) if data.get("longitude") not in (None, "") else None,
         }
+
+    def _odometer_error(f: dict, exclude_id: int | None = None) -> str | None:
+        """Przebieg musi rosnąć w czasie względem sąsiednich wpisów (po dacie).
+
+        missed_previous wyłącza kontrolę (np. korekta po wymianie licznika).
+        """
+        if f["missed_previous"]:
+            return None
+        params = [vehicle_id, exclude_id or -1, f["date"]]
+        prev = conn().execute(
+            "SELECT odometer FROM fillups WHERE vehicle_id = ? AND draft = 0 "
+            "AND id != ? AND date < ? ORDER BY date DESC LIMIT 1",
+            params).fetchone()
+        if prev and f["odometer"] < prev["odometer"]:
+            return (f"Przebieg {f['odometer']} km mniejszy niż poprzedni wpis "
+                    f"({prev['odometer']} km)")
+        nxt = conn().execute(
+            "SELECT odometer FROM fillups WHERE vehicle_id = ? AND draft = 0 "
+            "AND id != ? AND date > ? ORDER BY date ASC LIMIT 1",
+            params).fetchone()
+        if nxt and f["odometer"] > nxt["odometer"]:
+            return (f"Przebieg {f['odometer']} km większy niż późniejszy wpis "
+                    f"({nxt['odometer']} km)")
+        return None
+
+    def _remember_station(f: dict) -> None:
+        if f["station"]:
+            stn.upsert_station(conn(), f["station"],
+                               f["latitude"], f["longitude"])
 
     @app.post("/api/fillups")
     def api_fillup_add():
         f = _fillup_fields(request.get_json(force=True))
         if not f["date"] or not f["odometer"] or f["volume_l"] <= 0:
             return jsonify({"error": "Wymagane: data, przebieg, litry"}), 400
+        odo_err = _odometer_error(f)
+        if odo_err:
+            return jsonify({"error": odo_err}), 400
         try:
             cur = conn().execute(
                 """INSERT INTO fillups (vehicle_id, date, odometer, volume_l,
                    price_per_l, total_cost, full_tank, missed_previous,
-                   fuel_type, station, notes, source)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual')""",
+                   fuel_type, station, notes, paid_by, latitude, longitude,
+                   source)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'manual')""",
                 (vehicle_id, f["date"], f["odometer"], f["volume_l"],
                  f["price_per_l"], f["total_cost"], f["full_tank"],
-                 f["missed_previous"], f["fuel_type"], f["station"], f["notes"]))
+                 f["missed_previous"], f["fuel_type"], f["station"], f["notes"],
+                 f["paid_by"], f["latitude"], f["longitude"]))
             conn().commit()
         except sqlite3.IntegrityError:
             return jsonify({"error": "Wpis o tej dacie i przebiegu już istnieje"}), 409
+        _remember_station(f)
         changed()
         return jsonify({"id": cur.lastrowid}), 201
 
     @app.put("/api/fillups/<int:fid>")
     def api_fillup_update(fid: int):
         f = _fillup_fields(request.get_json(force=True))
+        odo_err = _odometer_error(f, exclude_id=fid)
+        if odo_err:
+            return jsonify({"error": odo_err}), 400
         cur = conn().execute(
             """UPDATE fillups SET date=?, odometer=?, volume_l=?, price_per_l=?,
                total_cost=?, full_tank=?, missed_previous=?, fuel_type=?,
-               station=?, notes=?, draft=0
+               station=?, notes=?, paid_by=?, latitude=?, longitude=?, draft=0
                WHERE id=? AND vehicle_id=?""",
             (f["date"], f["odometer"], f["volume_l"], f["price_per_l"],
              f["total_cost"], f["full_tank"], f["missed_previous"],
-             f["fuel_type"], f["station"], f["notes"], fid, vehicle_id))
+             f["fuel_type"], f["station"], f["notes"], f["paid_by"],
+             f["latitude"], f["longitude"], fid, vehicle_id))
         conn().commit()
         if not cur.rowcount:
             return jsonify({"error": "not found"}), 404
+        _remember_station(f)
         changed()
         return jsonify({"ok": True})
 
@@ -188,13 +237,47 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             "SELECT station, price_per_l FROM fillups WHERE vehicle_id = ? "
             "AND draft = 0 ORDER BY odometer DESC LIMIT 1",
             (vehicle_id,)).fetchone()
+        # Pozycja telefonu (location_entity) → dopasowanie zapisanej stacji.
+        lat = lon = matched = None
+        if ha_state and config.get("location_entity"):
+            data = ha_state(config["location_entity"])
+            attrs = (data or {}).get("attributes", {})
+            try:
+                lat, lon = float(attrs["latitude"]), float(attrs["longitude"])
+            except (KeyError, TypeError, ValueError):
+                lat = lon = None
+            if lat is not None:
+                matched = stn.nearest_station(conn(), lat, lon)
         return jsonify({
             "date": datetime.now().strftime("%Y-%m-%dT%H:%M"),
             "odometer": odometer,
-            "station": last["station"] if last else None,
+            "station": matched["name"] if matched else
+                       (last["station"] if last else None),
+            "station_matched": bool(matched),
+            "latitude": lat, "longitude": lon,
             "price_per_l": last["price_per_l"] if last else None,
             "fuel_type": config.get("default_fuel_type", "PB95"),
         })
+
+    # ── API: stacje / mapa ────────────────────────────────────────────────
+
+    @app.get("/api/stations")
+    def api_stations():
+        return jsonify(stn.list_stations(conn()))
+
+    @app.get("/api/stations/nearby")
+    def api_stations_nearby():
+        """Sugestie OSM Overpass dla pozycji bez dopasowanej stacji."""
+        try:
+            lat = float(request.args["lat"])
+            lon = float(request.args["lon"])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({"error": "Wymagane parametry lat i lon"}), 400
+        return jsonify(stn.overpass_lookup(lat, lon))
+
+    @app.get("/api/map-data")
+    def api_map_data():
+        return jsonify(stn.map_data(conn(), vehicle_id))
 
     # ── API: wydatki ──────────────────────────────────────────────────────
 
@@ -205,8 +288,20 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     @app.get("/api/categories")
     def api_categories():
         rows = conn().execute(
-            "SELECT id, name FROM expense_categories ORDER BY id").fetchall()
+            "SELECT id, name, hidden FROM expense_categories ORDER BY id"
+        ).fetchall()
         return jsonify([dict(r) for r in rows])
+
+    @app.put("/api/categories/<int:cid>")
+    def api_category_update(cid: int):
+        data = request.get_json(force=True)
+        cur = conn().execute(
+            "UPDATE expense_categories SET hidden = ? WHERE id = ?",
+            (1 if data.get("hidden") in (1, "1", True, "true") else 0, cid))
+        conn().commit()
+        if not cur.rowcount:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"ok": True})
 
     @app.post("/api/expenses")
     def api_expense_add():
@@ -224,6 +319,26 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         conn().commit()
         changed()
         return jsonify({"id": cur.lastrowid}), 201
+
+    @app.put("/api/expenses/<int:eid>")
+    def api_expense_update(eid: int):
+        data = request.get_json(force=True)
+        date = (data.get("date") or "").replace("T", " ")[:16]
+        cost = float(data.get("cost") or 0)
+        if not date or cost <= 0:
+            return jsonify({"error": "Wymagane: data i kwota"}), 400
+        cur = conn().execute(
+            """UPDATE expenses SET date=?, odometer=?, category_id=?,
+               description=?, cost=? WHERE id=? AND vehicle_id=?""",
+            (date, int(data.get("odometer") or 0) or None,
+             int(data.get("category_id") or 0) or dbm.category_id(conn(), None),
+             (data.get("description") or "").strip() or None, cost,
+             eid, vehicle_id))
+        conn().commit()
+        if not cur.rowcount:
+            return jsonify({"error": "not found"}), 404
+        changed()
+        return jsonify({"ok": True})
 
     @app.delete("/api/expenses/<int:eid>")
     def api_expense_delete(eid: int):

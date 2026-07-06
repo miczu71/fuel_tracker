@@ -28,10 +28,15 @@
   <label class="check">
     <input type="checkbox" name="missed_previous"> Pominięto poprzednie tankowanie
   </label>
-  <label>Stacja
+  <label class="check">
+    <input type="checkbox" name="paid_by"> Zapłacone przeze mnie (nie karta ORLEN Flota)
+  </label>
+  <label>Stacja <span class="muted" id="gps-hint"></span>
     <input type="text" name="station" list="stations">
     <datalist id="stations"></datalist>
   </label>
+  <input type="hidden" name="latitude">
+  <input type="hidden" name="longitude">
   <label>Notatki
     <input type="text" name="notes">
   </label>

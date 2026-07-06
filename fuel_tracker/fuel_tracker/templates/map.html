@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% set active = 'map' %}
+{% block title %}Mapa tankowań{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Mapa tankowań</h1></div>
+<div class="card">
+  <link rel="stylesheet" href="{{ base }}/static/leaflet.css">
+  <div id="map" class="map"></div>
+  <div class="chips map-legend">
+    <span class="chip"><span class="dot dot-fleet"></span> karta ORLEN Flota</span>
+    <span class="chip"><span class="dot dot-own"></span> tankowania prywatne</span>
+    <span class="chip"><span class="dot dot-foreign"></span> zagranica</span>
+    <span class="chip muted">rozmiar = liczba wizyt</span>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ base }}/static/leaflet.js"></script>
+<script>FT.initMap();</script>
+{% endblock %}

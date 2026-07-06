@@ -58,6 +58,11 @@ def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
         "month_fuel_cost": month_cost,
         "budget_left_month": round(monthly_budget - month_cost, 2)
                              if monthly_budget else None,
+        # Tankowania opłacone prywatnie — zastępuje ręczny
+        # input_number.suma_moich_wydatkow_na_paliwo w zysk_z_wynajmu_auta.
+        "self_paid_fuel_total": round(sum(
+            f["total_cost"] for f in fillups
+            if f.get("paid_by") == "own"), 2),
     }
     if s.last_fillup:
         f = s.last_fillup
@@ -91,6 +96,9 @@ def summary(conn: sqlite3.Connection, vehicle_id: int,
         "avg_price_per_l": s.avg_price_per_l,
         "last_fillup": s.last_fillup,
         "expenses_total": round(sum(e["cost"] for e in expenses), 2),
+        "self_paid_fuel_total": round(sum(
+            f["total_cost"] for f in fillups
+            if f.get("paid_by") == "own"), 2),
         "month": month,
         "month_fuel_cost": month_cost,
         "monthly_budget": monthly_budget,

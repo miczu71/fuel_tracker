@@ -5,9 +5,10 @@ import os
 import sqlite3
 
 # Kategorie 1:1 z eksportu Fuelio użytkownika + "Inne" jako kubeł na nieznane.
+# "Płyny" (AdBlue, spryskiwacze) — domyślna kategoria wydatków z karty ORLEN Flota.
 DEFAULT_CATEGORIES = [
     "Serwis", "Eksploatacja", "Rejestracja", "Parking", "Myjnia",
-    "Opłaty za przejazd", "Mandaty", "Tuning", "Ubezpieczenie", "Inne",
+    "Opłaty za przejazd", "Mandaty", "Tuning", "Ubezpieczenie", "Płyny", "Inne",
 ]
 
 _MIGRATIONS = [
@@ -74,6 +75,34 @@ _MIGRATIONS = [
         source TEXT NOT NULL,
         UNIQUE(fetched_at, station, fuel_type)
     );
+    """,
+    # v2 — stacje po GPS, tankowania prywatne (paid_by), kolumny walutowe
+    # (waluty aktywne od 0.4.0), ukrywanie kategorii. Backfill stacji
+    # z historycznych wpisów (uśrednione współrzędne, jeśli były).
+    """
+    CREATE TABLE stations (
+        id INTEGER PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        brand TEXT,
+        latitude REAL, longitude REAL,
+        country TEXT NOT NULL DEFAULT 'PL',
+        created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    ALTER TABLE fillups ADD COLUMN paid_by TEXT NOT NULL DEFAULT 'fleet_card';
+    ALTER TABLE fillups ADD COLUMN currency TEXT NOT NULL DEFAULT 'PLN';
+    ALTER TABLE fillups ADD COLUMN price_per_l_orig REAL;
+    ALTER TABLE fillups ADD COLUMN total_cost_orig REAL;
+    ALTER TABLE fillups ADD COLUMN exchange_rate REAL;
+    CREATE INDEX idx_fillups_vehicle_date ON fillups(vehicle_id, date);
+
+    ALTER TABLE expense_categories ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+
+    INSERT OR IGNORE INTO stations (name, latitude, longitude)
+    SELECT station, AVG(latitude), AVG(longitude)
+    FROM fillups
+    WHERE station IS NOT NULL AND TRIM(station) != ''
+    GROUP BY station;
     """,
 ]
 

@@ -150,3 +150,25 @@ body {
 .verify-ok { color: var(--good); font-weight: 600; }
 .verify-bad { color: var(--critical); font-weight: 600; }
 #verify-result table { margin-top: 10px; }
+
+/* ── Mapa tankowań (0.2.0) ── */
+.map { height: 65vh; min-height: 340px; border-radius: 10px; }
+.map-legend { margin-top: 10px; align-items: center; }
+.dot {
+  display: inline-block; width: 10px; height: 10px;
+  border-radius: 50%; margin-right: 4px; vertical-align: baseline;
+}
+.dot-fleet { background: var(--series-1); }
+.dot-own { background: var(--series-2); }
+.dot-foreign { background: var(--series-3); }
+
+/* ── Oznaczenia wpisów ── */
+.badge {
+  display: inline-block; font-size: 11px; font-weight: 700;
+  padding: 1px 7px; border-radius: 10px;
+  background: var(--page); border: 1px solid var(--grid);
+  color: var(--muted); vertical-align: middle;
+}
+.badge.own { color: var(--series-2); border-color: var(--series-2); }
+.chip.check { cursor: pointer; user-select: none; }
+.chip.check input { vertical-align: middle; margin-right: 4px; }

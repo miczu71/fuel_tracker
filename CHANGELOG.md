@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.0
+
+- **Stacje po GPS**: nowa tabela stacji (backfill z historii tankowań);
+  przy otwarciu formularza add-on pobiera pozycję z `location_entity`
+  (person/device_tracker z aplikacji mobilnej HA) i dopasowuje najbliższą
+  zapisaną stację (promień 300 m); bez dopasowania pyta OSM Overpass
+  o stacje w promieniu 500 m i podpowiada nazwę
+- **Mapa tankowań**: podstrona „Mapa" (Leaflet, kafelki OSM) z pinami stacji —
+  rozmiar wg liczby wizyt, kolor odróżnia tankowania prywatne i zagraniczne,
+  popup ze statystykami stacji (wizyty, suma, śr. cena, ostatnia wizyta)
+- **Tankowania opłacone prywatnie**: pole „Zapłacone przeze mnie" w formularzu,
+  oznaczenie na liście i mapie, nowy sensor `self_paid_fuel_total` —
+  docelowo zastąpi ręczny `input_number.suma_moich_wydatkow_na_paliwo`
+- **Walidacja przebiegu**: przebieg musi rosnąć w czasie względem sąsiednich
+  wpisów (wyłączana checkboxem „Pominięto poprzednie tankowanie")
+- **Edycja wydatków** (`PUT /api/expenses/<id>`) + przycisk „Edytuj" na liście
+- **Kategorie wydatków**: nowa kategoria „Płyny" (AdBlue, spryskiwacze z karty
+  ORLEN Flota); nieużywane kategorie można ukryć w Ustawieniach
+- Schemat bazy przygotowany pod tankowania za granicą (waluta, kwoty
+  oryginalne, kurs) — funkcja wchodzi w 0.4.0
+- Nowa opcja add-onu: `location_entity` (domyślnie `device_tracker.op12`)
+
 ## 0.1.3
 
 - Import wydatków z Drivvo działa z realnym schematem web API: kwoty są

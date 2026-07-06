@@ -43,6 +43,18 @@ def get_numeric_state(entity_id: str) -> float | None:
         return None
 
 
+def get_location(entity_id: str) -> tuple[float, float] | None:
+    """(lat, lon) z atrybutów encji person/device_tracker albo None."""
+    data = get_state(entity_id)
+    if not data:
+        return None
+    attrs = data.get("attributes", {})
+    try:
+        return float(attrs["latitude"]), float(attrs["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def notify(service: str, title: str, message: str) -> bool:
     """Wysyła powiadomienie, np. service='notify/family'."""
     try:

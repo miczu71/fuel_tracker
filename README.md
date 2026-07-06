@@ -20,8 +20,20 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 - **Statystyki jak w Fuelio** — spalanie L/100km liczone segmentami między
   tankowaniami do pełna (partiale wliczane do segmentu), średnia ogólna
   Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne.
+- **Stacje po GPS** — przy otwarciu formularza add-on pobiera pozycję telefonu
+  (`location_entity`, aplikacja mobilna HA) i dopasowuje najbliższą zapisaną
+  stację (300 m); bez dopasowania podpowiada nazwę z OSM Overpass (500 m).
+- **Mapa tankowań** — podstrona z pinami stacji (Leaflet + kafelki OSM):
+  rozmiar pinu = liczba wizyt, kolor odróżnia tankowania prywatne
+  i zagraniczne, popup ze statystykami stacji.
+- **Tankowania opłacone prywatnie** — checkbox „Zapłacone przeze mnie",
+  oznaczenie na liście i mapie, osobny sensor `self_paid_fuel_total`
+  do rozliczenia zysku z wynajmu.
+- **Walidacja przebiegu** — odometr musi rosnąć w czasie względem sąsiednich
+  wpisów (chyba że zaznaczono „Pominięto poprzednie tankowanie").
 - **Wydatki w kategoriach** — Serwis, Eksploatacja, Rejestracja, Parking,
-  Myjnia, Opłaty za przejazd, Mandaty, Tuning, Ubezpieczenie, Inne.
+  Myjnia, Opłaty za przejazd, Mandaty, Tuning, Ubezpieczenie, Płyny, Inne;
+  edycja wpisów, ukrywanie nieużywanych kategorii w Ustawieniach.
 - **Import Fuelio CSV** — upload w UI lub auto-import plików `*.csv`
   z `/share/fuel_tracker/import/` przy starcie; idempotentny (re-import nie
   duplikuje wpisów).
@@ -58,6 +70,7 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 | `sensor.superb_fuel_expenses_total` | PLN | Suma wydatków pozapaliwowych |
 | `sensor.superb_fuel_budget_left_month` | PLN | Pozostały budżet paliwowy w bieżącym miesiącu |
 | `sensor.superb_fuel_month_fuel_cost` | PLN | Wydatki na paliwo w bieżącym miesiącu |
+| `sensor.superb_fuel_self_paid_fuel_total` | PLN | Suma tankowań opłaconych prywatnie („Zapłacone przeze mnie") |
 
 > Rzeczywiste `entity_id` zależą od nazwy urządzenia — po pierwszym starcie
 > zweryfikuj je w **Narzędzia deweloperskie → Stany**.
@@ -71,7 +84,8 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 | `default_fuel_type` | `PB95` | Domyślny typ paliwa w formularzu |
 | `monthly_fuel_budget` | `984.0` | Miesięczny budżet paliwowy [PLN] |
 | `odometer_entity` | `sensor.skoda_superb_mileage` | Encja odometru do prefill formularza |
-| `fuel_level_entity` | `sensor.skoda_superb_fuel_level` | Encja poziomu paliwa (autodetekcja — planowana) |
+| `fuel_level_entity` | `sensor.skoda_superb_fuel_level` | Encja poziomu paliwa (nieużywana) |
+| `location_entity` | `device_tracker.op12` | Encja z GPS telefonu do dopasowania stacji w formularzu |
 | `drivvo_email` / `drivvo_password` | — | Konto Drivvo do jednorazowego importu |
 | `drivvo_vehicle_id` | `0` | ID pojazdu w Drivvo (`0` = pierwszy z konta) |
 | `notify_service` | `notify/family` | Usługa powiadomień |
@@ -83,15 +97,18 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 ## REST API (przez ingress)
 
 `GET /api/summary` · CRUD `/api/fillups` · `GET /api/prefill` ·
-CRUD `/api/expenses` · `GET /api/categories` · `POST /api/import/csv` ·
+CRUD `/api/expenses` · `GET|PUT /api/categories` · `GET /api/stations` ·
+`GET /api/stations/nearby` · `GET /api/map-data` · `POST /api/import/csv` ·
 `POST /api/import/drivvo` · `GET /api/verify` · `GET /api/export/fuelio.csv` ·
 `GET /api/health`
 
 ## Plan rozwoju
 
-- **0.2.0** — scraper lokalnych cen paliw (Wrocław), autodetekcja tankowania
-  ze skoku poziomu paliwa + drafty + notyfikacje.
-- **0.3.0** — pakiet YAML z alertem cenowym, mapka stacji na dashboardzie.
+- **0.3.0** — parser paragonów ze zdjęcia (aparat/galeria w aplikacji
+  mobilnej HA, LLM vision), rozdział paragonu na tankowanie + „Płyny".
+- **0.4.0** — tankowania za granicą (waluty, kursy NBP), scraper lokalnych
+  cen paliw, rozbudowane statystyki (rankingi stacji, rekordy, leasing).
+- **0.5.0** — pakiet YAML dla HA i karta Lovelace.
 
 ## Rozwój
 

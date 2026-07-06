@@ -136,6 +136,7 @@ def main() -> None:
             "default_fuel_type": default_fuel,
             "odometer_entity": _env("ODOMETER_ENTITY"),
             "fuel_level_entity": _env("FUEL_LEVEL_ENTITY"),
+            "location_entity": _env("LOCATION_ENTITY"),
             "drivvo_email": _env("DRIVVO_EMAIL"),
             "drivvo_password": _env("DRIVVO_PASSWORD"),
             "drivvo_vehicle_id": int(_env("DRIVVO_VEHICLE_ID", "0") or 0),

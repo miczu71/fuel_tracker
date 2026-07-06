@@ -51,6 +51,7 @@ _SENSORS: list[_Sensor] = [
     _Sensor("expenses_total",       "Expenses Total",       "PLN",      "monetary", "total",            "mdi:receipt"),
     _Sensor("budget_left_month",    "Budget Left Month",    "PLN",      "monetary", "total",            "mdi:piggy-bank"),
     _Sensor("month_fuel_cost",      "Month Fuel Cost",      "PLN",      "monetary", "total",            "mdi:calendar-today"),
+    _Sensor("self_paid_fuel_total", "Self Paid Fuel Total", "PLN",      "monetary", "total",            "mdi:account-cash"),
 ]
 
 
