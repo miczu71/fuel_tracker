@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.0
+
+- **Parser paragonów ze zdjęcia (LLM vision)** — przycisk „📷 Zeskanuj
+  paragon" w formularzu tankowania: w aplikacji mobilnej HA otwiera od razu
+  aparat (`capture="environment"`), działa też upload z galerii. Zdjęcie
+  analizuje usługa `llmvision.image_analyzer` (istniejąca integracja,
+  provider wykrywany automatycznie przez config entries — zero nowych opcji
+  add-onu; jawny model `gemini-2.5-flash`, bo domyślny `gemini-2.0-flash`
+  z integracji stracił darmową quotę). Wynik **prefilluje formularz** —
+  nigdy auto-zapis, użytkownik weryfikuje pola i klika Zapisz.
+- **Dwa formaty paragonów ORLEN**: paragon fiskalny (nazwa paliwa,
+  litry × cena/L) oraz „Dowód wydania — karta FLOTA ORLEN" (niefiskalny:
+  Kwota, Ilość, **Stan licznika → prefill przebiegu**; cena/L wyliczana
+  z kwoty ÷ litrów, typ paliwa z konfiguracji). Zweryfikowane na
+  prawdziwym dowodzie wydania: 100% zgodności z ręcznym wpisem
+  (data, przebieg, litry, kwota).
+- **Rozdział paragonu mieszanego**: pozycje niepaliwowe (AdBlue, płyn do
+  spryskiwaczy…) → checkbox „Dodaj też wydatek Płyny" przy zapisie —
+  jedno zdjęcie tworzy tankowanie + wydatek, oba świadomie zatwierdzone.
+- **Załączniki**: zdjęcia paragonów w `<backup_share>/attachments/`
+  (obejmuje je nocny backup share), tabela `attachments` (migracja #4),
+  link 📷 przy wpisie na liście tankowań, `GET /api/attachments/<id>`.
+  Zdjęcie zostaje nawet gdy analiza padnie (można podpiąć do ręcznego
+  wpisu) i gdy wpis zostanie usunięty (dowód zostaje).
+- **Fix wyścigu MQTT przy starcie**: pierwsza publikacja stanu wyprzedzała
+  połączenie z brokerem, przez co sensory po restarcie wisiały jako
+  „unknown" do kolejnego ticku (15 min). Stan jest teraz zapamiętywany
+  i publikowany w `on_connect` — sensory mają wartości od razu.
+- Nowe endpointy: `POST /api/receipts/parse`, `GET /api/attachments/<id>`;
+  `POST/PUT /api/fillups` i `POST /api/expenses` przyjmują `attachment_id`.
+- Limit uploadu podniesiony do 16 MB (zdjęcia z aparatu telefonu).
+
 ## 0.4.4
 
 - **Fix (właściwy) problemu z cache na telefonie**: diagnoza po 0.4.2/0.4.3

@@ -176,3 +176,11 @@ body {
 
 /* Atrybut hidden ma zawsze wygrywać z display ustawianym przez klasy (.btn itp.). */
 [hidden] { display: none !important; }
+
+/* Skan paragonu: input file schowany wizualnie (nie hidden — klik z label
+   musi otwierać aparat/galerię także w WebView aplikacji HA). */
+.scan-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}

@@ -116,6 +116,22 @@ _MIGRATIONS = [
         PRIMARY KEY (code, req_date)
     );
     """,
+    # v4 — załączniki (zdjęcia paragonów, 0.5.0). Plik żyje w
+    # <backup_share>/attachments/; wiersz może być powiązany z tankowaniem
+    # i/lub wydatkiem (paragon mieszany tworzy oba wpisy). Usunięcie wpisu
+    # nie usuwa zdjęcia (ON DELETE SET NULL) — paragon zostaje jako dowód.
+    """
+    CREATE TABLE attachments (
+        id INTEGER PRIMARY KEY,
+        filename TEXT NOT NULL,
+        fillup_id INTEGER REFERENCES fillups(id) ON DELETE SET NULL,
+        expense_id INTEGER REFERENCES expenses(id) ON DELETE SET NULL,
+        parsed_json TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_attachments_fillup ON attachments(fillup_id);
+    CREATE INDEX idx_attachments_expense ON attachments(expense_id);
+    """,
 ]
 
 

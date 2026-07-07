@@ -68,6 +68,47 @@ def notify(service: str, title: str, message: str) -> bool:
         return False
 
 
+def call_service(domain: str, service: str, data: dict,
+                 return_response: bool = False,
+                 timeout: int = 90) -> dict | None:
+    """Wywołuje usługę HA; z return_response zwraca service_response.
+
+    Zwraca dict odpowiedzi (dla return_response klucz 'service_response')
+    albo None przy błędzie HTTP/sieci.
+    """
+    url = f"{_BASE}/services/{domain}/{service}"
+    if return_response:
+        url += "?return_response"
+    try:
+        resp = requests.post(url, headers=_headers(), json=data,
+                             timeout=timeout)
+        if resp.status_code < 400:
+            return resp.json()
+        logger.warning("HA services/%s/%s -> HTTP %d: %s", domain, service,
+                       resp.status_code, resp.text[:300])
+    except requests.RequestException as exc:
+        logger.warning("HA services/%s/%s nieudane: %s", domain, service, exc)
+    return None
+
+
+def find_config_entry(domain: str) -> str | None:
+    """entry_id pierwszego wpisu konfiguracyjnego danej integracji albo None."""
+    try:
+        resp = requests.get(f"{_BASE}/config/config_entries/entry",
+                            headers=_headers(), params={"domain": domain},
+                            timeout=10)
+        if resp.status_code == 200:
+            entries = resp.json()
+            if entries:
+                return entries[0].get("entry_id")
+            return None
+        logger.warning("HA config_entries?domain=%s -> HTTP %d", domain,
+                       resp.status_code)
+    except requests.RequestException as exc:
+        logger.warning("HA config_entries niedostępne: %s", exc)
+    return None
+
+
 def get_mqtt_service() -> dict | None:
     """Dane brokera MQTT z usługi Supervisora (wymaga services: mqtt:need).
 

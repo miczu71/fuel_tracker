@@ -17,6 +17,15 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 - **Dziennik tankowań** — data, odometr, litry, cena/L, kwota (2 z 3 pól
   wyliczają trzecie), pełny/częściowy bak, pominięte tankowanie, stacja, GPS,
   notatki; edycja i usuwanie.
+- **Parser paragonów ze zdjęcia (LLM vision)** — „📷 Zeskanuj paragon"
+  w formularzu: w aplikacji mobilnej HA otwiera aparat, działa też galeria.
+  Analiza przez istniejącą integrację `llmvision` (provider wykrywany
+  automatycznie, model `gemini-2.5-flash`) — wynik prefilluje formularz,
+  zapis zawsze ręczny. Rozpoznaje paragon fiskalny **i** „Dowód wydania —
+  karta FLOTA ORLEN" (z przebiegiem ze stanu licznika); pozycje
+  niepaliwowe z paragonu mieszanego mogą jednym kliknięciem utworzyć
+  wydatek „Płyny". Zdjęcie zostaje jako załącznik wpisu (📷 na liście),
+  przechowywane w `<backup_share>/attachments/`.
 - **Statystyki jak w Fuelio** — spalanie L/100km liczone segmentami między
   tankowaniami do pełna (partiale wliczane do segmentu), średnia ogólna
   Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne
@@ -122,16 +131,17 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 `GET /api/summary` · CRUD `/api/fillups` · `GET /api/prefill` ·
 `GET /api/rate` · CRUD `/api/expenses` · `GET|PUT /api/categories` ·
 `GET /api/stations` · `GET /api/stations/nearby` · `GET /api/map-data` ·
+`POST /api/receipts/parse` · `GET /api/attachments/<id>` ·
 `GET /api/statistics` · `GET /api/report.csv` · `POST /api/import/csv` ·
 `POST /api/import/drivvo` · `GET /api/verify` · `GET /api/export/fuelio.csv` ·
 `GET /api/health`
 
 ## Plan rozwoju
 
-- **0.5.0** — parser paragonów ze zdjęcia (aparat/galeria w aplikacji
-  mobilnej HA, LLM vision), rozdział paragonu na tankowanie + „Płyny"
-  (dawne 0.3.0 z roadmapy — przełożone).
 - **0.6.0** — pakiet YAML dla HA i karta Lovelace.
+- **0.7.0** — ustawienia edytowalne w UI (bez restartu add-onu).
+- **0.8.0** — pojazdy: cykl życia (dodawanie/archiwizacja) + leasing per auto.
+- **0.9.0** — backup/restore w UI + PWA.
 
 ## Rozwój
 

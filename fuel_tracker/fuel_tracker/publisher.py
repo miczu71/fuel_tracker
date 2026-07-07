@@ -123,6 +123,11 @@ class MQTTPublisher:
         self._device_name = device_name
         self._version = version
         self._connected = False
+        # Ostatni znany stan — pierwsza publikacja po starcie zwykle
+        # wyprzedza connect (scheduler odpala tick natychmiast), więc
+        # stan czeka tu i wychodzi w _on_connect. Bez tego nowe sensory
+        # wisiały jako "unknown" do kolejnego ticku (15 min).
+        self._last_values: dict | None = None
 
         self._client = mqtt.Client(client_id=_DEVICE_ID, clean_session=True)
         if user:
@@ -150,6 +155,9 @@ class MQTTPublisher:
                 client.publish(topic, json.dumps(payload), retain=True)
             client.publish(_AVAIL_TOPIC, "online", retain=True)
             logger.info("MQTT discovery opublikowane (%d sensorów)", len(_SENSORS))
+            if self._last_values is not None:
+                self._publish_values(self._last_values)
+                logger.info("MQTT: opublikowano stan zaległy sprzed połączenia")
         else:
             logger.error("MQTT connect nieudany (rc=%d)", rc)
 
@@ -159,9 +167,13 @@ class MQTTPublisher:
             logger.warning("MQTT rozłączone (rc=%d) — paho wznowi połączenie", rc)
 
     def publish(self, values: dict) -> None:
+        self._last_values = values
         if not self._connected:
-            logger.debug("MQTT niepołączone — pomijam publikację")
+            logger.debug("MQTT niepołączone — stan zapamiętany do on_connect")
             return
+        self._publish_values(values)
+
+    def _publish_values(self, values: dict) -> None:
         for slug, payload in render_values(values).items():
             self._client.publish(_state_topic(slug), payload, retain=True)
         logger.debug("Opublikowano stan sensorów MQTT")

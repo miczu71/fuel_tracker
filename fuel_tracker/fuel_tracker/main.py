@@ -160,6 +160,7 @@ def main() -> None:
             "tank_capacity_l": tank_capacity,
             "odo_budget_entity": _env("ODO_BUDGET_ENTITY"),
             "lease_km_limit": int(_env("LEASE_KM_LIMIT", "0") or 0),
+            "share_dir": share_dir,
         },
         on_data_change=publish_sensors,
         ha_state=ha_client.get_state,

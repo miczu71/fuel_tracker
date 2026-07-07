@@ -155,6 +155,7 @@ window.FT = (function () {
         <td>${f.full_tank ? "✔" : "–"}${f.missed_previous ? " ⚠" : ""}</td>
         <td>${f.station || ""}</td>
         <td>
+          ${f.attachment_id ? `<a class="btn" title="Paragon" href="api/attachments/${f.attachment_id}" target="_blank">📷</a>` : ""}
           <a class="btn" href="${base}/fillup-form?id=${f.id}">Edytuj</a>
           <button class="btn danger" data-del="${f.id}">Usuń</button>
         </td>`;
@@ -217,6 +218,58 @@ window.FT = (function () {
     };
     form.currency.addEventListener("change", () => syncCurrency(false));
     form.date.addEventListener("change", () => syncCurrency(false));
+
+    // Skan paragonu: zdjęcie → api/receipts/parse (llmvision) → prefill pól.
+    // Nigdy auto-zapis — użytkownik weryfikuje i klika Zapisz.
+    const scanInput = document.getElementById("receipt-input");
+    const scanStatus = document.getElementById("scan-status");
+    const extrasBox = document.getElementById("receipt-extras");
+    let attachmentId = null;
+    let receiptExtras = null;
+    scanInput.addEventListener("change", async () => {
+      const file = scanInput.files[0];
+      if (!file) return;
+      scanStatus.textContent = "Analizuję paragon…";
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const r = await fetch("api/receipts/parse", { method: "POST", body: fd });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          // Zdjęcie mogło się zapisać mimo błędnej analizy — podpinamy je.
+          if (data.attachment_id) attachmentId = data.attachment_id;
+          throw new Error(data.error || `HTTP ${r.status}`);
+        }
+        attachmentId = data.attachment_id;
+        const p = data.parsed;
+        if (p.date) form.date.value = p.date;
+        if (p.odometer) form.odometer.value = p.odometer;
+        if (p.volume_l) V.value = p.volume_l;
+        if (p.price_per_l) P.value = p.price_per_l;
+        if (p.total_cost) T.value = p.total_cost;
+        if (p.station && !form.station.value) form.station.value = p.station;
+        if (p.currency && p.currency !== "PLN") {
+          form.currency.value = p.currency;
+          syncCurrency(false);
+        }
+        scanStatus.textContent = "✓ Odczytano — sprawdź pola przed zapisem";
+        if (p.non_fuel_total > 0) {
+          receiptExtras = p;
+          extrasBox.hidden = false;
+          document.getElementById("extras-label").textContent =
+            `Dodaj też wydatek „Płyny": ` +
+            p.non_fuel_items.map((i) => i.description).join(", ") +
+            ` — ${fmt(p.non_fuel_total)} ${p.currency}`;
+        } else {
+          receiptExtras = null;
+          extrasBox.hidden = true;
+        }
+      } catch (ex) {
+        scanStatus.textContent = "Błąd: " + ex.message;
+      } finally {
+        scanInput.value = "";
+      }
+    });
 
     if (editId) {
       document.getElementById("form-title").textContent = "Edycja tankowania";
@@ -294,10 +347,26 @@ window.FT = (function () {
         latitude: form.latitude.value, longitude: form.longitude.value,
         currency: form.currency.value,
         exchange_rate: form.exchange_rate.value,
+        attachment_id: attachmentId,
       };
       try {
         if (editId) await sendJSON(`api/fillups/${editId}`, "PUT", body);
         else await sendJSON("api/fillups", "POST", body);
+        // Paragon mieszany: pozycje niepaliwowe → wydatek "Płyny"
+        // (jedno zdjęcie tworzy dwa wpisy, oba zaakceptowane świadomie).
+        if (receiptExtras && document.getElementById("extras-check").checked) {
+          const cats = await getJSON("api/categories");
+          const fluids = cats.find((c) => c.name === "Płyny");
+          await sendJSON("api/expenses", "POST", {
+            date: form.date.value,
+            odometer: form.odometer.value,
+            category_id: fluids ? fluids.id : null,
+            description: receiptExtras.non_fuel_items
+              .map((i) => i.description).join(", "),
+            cost: receiptExtras.non_fuel_total,
+            attachment_id: attachmentId,
+          });
+        }
         window.location.href = `${base}/fillups`;
       } catch (ex) {
         err.textContent = ex.message;

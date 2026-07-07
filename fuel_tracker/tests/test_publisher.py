@@ -1,4 +1,6 @@
 """Payloady MQTT discovery i render wartości."""
+from unittest.mock import MagicMock
+
 from fuel_tracker import publisher
 
 
@@ -30,6 +32,27 @@ def test_monetary_requires_state_class_total():
     for s in publisher._SENSORS:
         if s.device_class == "monetary":
             assert s.state_class == "total", s.slug
+
+
+def test_publish_before_connect_flushes_in_on_connect():
+    """Fix wyścigu 0.5.0: pierwszy tick schedulera wyprzedza connect —
+    stan ma czekać i wyjść w on_connect, nie ginąć do kolejnego ticku."""
+    pub = publisher.MQTTPublisher("localhost", 1883, "", "")
+    pub._client = MagicMock()
+
+    pub.publish({"total_cost": 100.0})  # przed połączeniem
+    pub._client.publish.assert_not_called()
+
+    pub._on_connect(pub._client, None, None, 0)
+    topics = [c.args[0] for c in pub._client.publish.call_args_list]
+    assert "fuel_tracker/sensors/total_cost/state" in topics
+    assert "fuel_tracker/availability" in topics
+
+    # Po połączeniu publikacja idzie od razu
+    pub._client.reset_mock()
+    pub.publish({"total_cost": 200.0})
+    args = {c.args[0]: c.args[1] for c in pub._client.publish.call_args_list}
+    assert args["fuel_tracker/sensors/total_cost/state"] == "200.0"
 
 
 def test_render_values():

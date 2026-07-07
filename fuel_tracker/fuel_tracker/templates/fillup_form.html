@@ -4,6 +4,12 @@
 {% block content %}
 <div class="page-head"><h1 id="form-title">Nowe tankowanie</h1></div>
 <form class="card form" id="fillup-form" data-edit-id="{{ edit_id }}">
+  <div class="scan-row">
+    <label class="btn" for="receipt-input">📷 Zeskanuj paragon</label>
+    <input type="file" id="receipt-input" accept="image/*"
+           capture="environment" class="visually-hidden">
+    <span class="muted" id="scan-status"></span>
+  </div>
   <label>Data i godzina
     <input type="datetime-local" name="date" required>
   </label>
@@ -49,6 +55,10 @@
   <input type="hidden" name="longitude">
   <label>Notatki
     <input type="text" name="notes">
+  </label>
+  <label class="check" id="receipt-extras" hidden>
+    <input type="checkbox" id="extras-check" checked>
+    <span id="extras-label"></span>
   </label>
   <div class="form-actions">
     <button type="submit" class="btn primary big">Zapisz</button>

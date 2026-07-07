@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.db
+
+# Prawdziwe paragony do lokalnej weryfikacji E2E — dane osobowe (nr karty,
+# rejestracja), NIE commitować do publicznego repo.
+fuel_tracker/tests/fixtures/receipt_*.jpg
