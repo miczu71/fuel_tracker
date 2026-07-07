@@ -20,7 +20,7 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 - **Parser paragonów ze zdjęcia (LLM vision)** — „📷 Zeskanuj paragon"
   w formularzu: w aplikacji mobilnej HA otwiera aparat, działa też galeria.
   Analiza przez istniejącą integrację `llmvision` (provider wykrywany
-  automatycznie, model `gemini-2.5-flash`) — wynik prefilluje formularz,
+  automatycznie, modele `gemini-3.1-flash-lite` + fallback) — wynik prefilluje formularz,
   zapis zawsze ręczny. Rozpoznaje paragon fiskalny **i** „Dowód wydania —
   karta FLOTA ORLEN" (z przebiegiem ze stanu licznika); pozycje
   niepaliwowe z paragonu mieszanego mogą jednym kliknięciem utworzyć

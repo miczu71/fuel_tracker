@@ -26,10 +26,12 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
-# Jawny model zamiast domyślnego z integracji: skonfigurowany tam
-# gemini-2.0-flash stracił darmową quotę (limit 0 od 2026) i każde
-# wywołanie z default_model kończy się "Couldn't generate content".
-MODEL = "gemini-2.5-flash"
+# Jawne modele zamiast domyślnego z integracji: skonfigurowany tam
+# gemini-2.0-flash stracił darmową quotę (limit 0 od 2026), a 2.5-flash
+# ma już tylko 20 zapytań/dzień. Modele lite mają wysokie darmowe limity,
+# a paragon FLOTA parsują identycznie (zweryfikowane 2026-07-07).
+# Drugi model to fallback, gdy pierwszemu skończy się dzienna quota.
+MODELS = ("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
 
 # Schemat wymuszany na modelu (llmvision structure). Bez additionalProperties
 # — Gemini structured output nie przyjmuje tego pola w każdym wariancie.
@@ -103,41 +105,47 @@ def save_upload(file_storage, attach_dir: Path) -> str:
 
 
 def analyze(image_path: str) -> dict:
-    """Zdjęcie → surowy dict z modelu vision (llmvision przez HA API)."""
+    """Zdjęcie → surowy dict z modelu vision (llmvision przez HA API).
+
+    llmvision zgłasza wyczerpaną quotę i inne błędy providera tym samym
+    tekstem "Couldn't generate content" — dlatego przy braku JSON
+    ponawiamy z kolejnym modelem z listy zamiast diagnozować przyczynę.
+    """
     provider = ha_client.find_config_entry("llmvision")
     if not provider:
         raise ReceiptError(
             "Brak skonfigurowanej integracji llmvision w HA — "
             "parser paragonów jej wymaga")
-    resp = ha_client.call_service(
-        "llmvision", "image_analyzer",
-        {
-            "provider": provider,
-            "model": MODEL,
-            "message": PROMPT,
-            "image_file": image_path,
-            "include_filename": False,
-            "target_width": 1280,
-            "max_tokens": 1500,
-            "response_format": "json",
-            "structure": json.dumps(STRUCTURE, ensure_ascii=False),
-        },
-        return_response=True, timeout=90)
-    if resp is None:
-        raise ReceiptError("Usługa llmvision nie odpowiedziała — "
-                           "sprawdź logi HA")
-    data = resp.get("service_response") or {}
-    parsed = data.get("structured_response")
-    if isinstance(parsed, str):
-        parsed = extract_json(parsed)
-    if not isinstance(parsed, dict):
-        parsed = extract_json(data.get("response_text") or "")
-    if not isinstance(parsed, dict):
-        logger.warning("llmvision: brak JSON w odpowiedzi: %s",
-                       str(data)[:300])
-        raise ReceiptError("Model nie zwrócił danych paragonu — "
-                           "spróbuj wyraźniejszego zdjęcia")
-    return parsed
+    for model in MODELS:
+        resp = ha_client.call_service(
+            "llmvision", "image_analyzer",
+            {
+                "provider": provider,
+                "model": model,
+                "message": PROMPT,
+                "image_file": image_path,
+                "include_filename": False,
+                "target_width": 1280,
+                "max_tokens": 1500,
+                "response_format": "json",
+                "structure": json.dumps(STRUCTURE, ensure_ascii=False),
+            },
+            return_response=True, timeout=90)
+        if resp is None:
+            raise ReceiptError("Usługa llmvision nie odpowiedziała — "
+                               "sprawdź logi HA")
+        data = resp.get("service_response") or {}
+        parsed = data.get("structured_response")
+        if isinstance(parsed, str):
+            parsed = extract_json(parsed)
+        if not isinstance(parsed, dict):
+            parsed = extract_json(data.get("response_text") or "")
+        if isinstance(parsed, dict):
+            return parsed
+        logger.warning("llmvision (%s): brak JSON w odpowiedzi: %s",
+                       model, str(data)[:300])
+    raise ReceiptError("Model nie zwrócił danych paragonu — "
+                       "spróbuj wyraźniejszego zdjęcia")
 
 
 def extract_json(text: str) -> dict | None:

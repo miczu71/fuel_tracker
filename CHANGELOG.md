@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1
+
+- **Parser: modele lite z fallbackiem** — weryfikacja produkcyjna 0.5.0
+  wykazała, że darmowa quota `gemini-2.5-flash` to już tylko
+  20 zapytań/dzień (wyczerpana testami tego samego dnia). Parser używa
+  teraz `gemini-3.1-flash-lite` z fallbackiem na `gemini-2.5-flash-lite`
+  (drugi model przy braku odpowiedzi pierwszego) — oba parsują dowód
+  wydania FLOTA w 100% zgodnie z wpisem referencyjnym, a limity lite
+  są wielokrotnie wyższe.
+
 ## 0.5.0
 
 - **Parser paragonów ze zdjęcia (LLM vision)** — przycisk „📷 Zeskanuj
