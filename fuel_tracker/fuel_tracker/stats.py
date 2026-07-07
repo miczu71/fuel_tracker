@@ -109,20 +109,27 @@ def segment_consumption_by_fillup(fillups: list[dict]) -> dict[int, float]:
 
 
 def monthly_series(fillups: list[dict], expenses: list[dict]) -> list[dict]:
-    """Serie miesięczne: [{month: 'YYYY-MM', fuel: PLN, expenses: PLN, volume: L}]."""
+    """Serie miesięczne: [{month: 'YYYY-MM', fuel: PLN (karta),
+    fuel_own: PLN (prywatne), expenses: PLN, volume: L}]."""
+    def blank(m: str) -> dict:
+        return {"month": m, "fuel": 0.0, "fuel_own": 0.0,
+                "expenses": 0.0, "volume": 0.0}
+
     months: dict[str, dict] = {}
     for f in fillups:
         m = f["date"][:7]
-        d = months.setdefault(m, {"month": m, "fuel": 0.0, "expenses": 0.0, "volume": 0.0})
-        d["fuel"] += f["total_cost"]
+        d = months.setdefault(m, blank(m))
+        key = "fuel_own" if f.get("paid_by") == "own" else "fuel"
+        d[key] += f["total_cost"]
         d["volume"] += f["volume_l"]
     for e in expenses:
         m = e["date"][:7]
-        d = months.setdefault(m, {"month": m, "fuel": 0.0, "expenses": 0.0, "volume": 0.0})
+        d = months.setdefault(m, blank(m))
         d["expenses"] += e["cost"]
     out = sorted(months.values(), key=lambda d: d["month"])
     for d in out:
         d["fuel"] = round(d["fuel"], 2)
+        d["fuel_own"] = round(d["fuel_own"], 2)
         d["expenses"] = round(d["expenses"], 2)
         d["volume"] = round(d["volume"], 2)
     return out

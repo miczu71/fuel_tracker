@@ -19,7 +19,8 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
   notatki; edycja i usuwanie.
 - **Statystyki jak w Fuelio** — spalanie L/100km liczone segmentami między
   tankowaniami do pełna (partiale wliczane do segmentu), średnia ogólna
-  Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne.
+  Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne
+  (paliwo z karty / paliwo prywatne / wydatki jako osobne serie wykresu).
 - **Stacje po GPS** — przy otwarciu formularza add-on pobiera pozycję telefonu
   (`location_entity`, aplikacja mobilna HA) i dopasowuje najbliższą zapisaną
   stację (300 m); bez dopasowania podpowiada nazwę z OSM Overpass (500 m).

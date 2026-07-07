@@ -115,8 +115,14 @@ window.FT = (function () {
         labels: s.monthly.map((m) => m.month),
         datasets: [
           {
-            label: "Paliwo", data: s.monthly.map((m) => m.fuel),
+            label: "Paliwo (karta)", data: s.monthly.map((m) => m.fuel),
             backgroundColor: css("--series-1"),
+            borderColor: css("--surface"), borderWidth: 1,
+            borderRadius: 3,
+          },
+          {
+            label: "Paliwo prywatne", data: s.monthly.map((m) => m.fuel_own),
+            backgroundColor: css("--series-2"),
             borderColor: css("--surface"), borderWidth: 1,
             borderRadius: 3,
           },

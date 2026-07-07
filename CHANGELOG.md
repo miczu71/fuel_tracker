@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+- **Pulpit — wykres „Koszty miesięczne"**: tankowania opłacone prywatnie
+  (`paid_by=own`) wydzielone jako osobna seria „Paliwo prywatne" (zielona,
+  spójna z odznaką „moje" i pinami na mapie); seria „Paliwo (karta)"
+  pokazuje już tylko kartę ORLEN Flota. Bez zmian w sensorach i budżecie
+  (budżet nadal liczy całość paliwa).
+
 ## 0.4.0
 
 > Numeracja zgodna z roadmapą: 0.3.0 (parser paragonów LLM vision)

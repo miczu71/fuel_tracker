@@ -90,10 +90,23 @@ def test_monthly_series():
                F(2, 1500, 30, cost=180, date="2025-02-05 10:00")]
     expenses = [{"date": "2025-01-20 12:00", "cost": 89.98}]
     series = st.monthly_series(fillups, expenses)
-    assert series[0] == {"month": "2025-01", "fuel": 240.0,
+    assert series[0] == {"month": "2025-01", "fuel": 240.0, "fuel_own": 0.0,
                          "expenses": 89.98, "volume": 40.0}
     assert series[1]["fuel"] == 180.0
     assert st.month_fuel_spend(fillups, "2025-02") == 180.0
+
+
+def test_monthly_series_splits_private_fuel():
+    # Tankowanie paid_by=own ląduje w fuel_own, nie w fuel (karta).
+    own = F(2, 1500, 30, cost=180, date="2025-01-15 10:00")
+    own["paid_by"] = "own"
+    fillups = [F(1, 1000, 40, cost=240, date="2025-01-05 10:00"), own]
+    series = st.monthly_series(fillups, [])
+    assert series[0]["fuel"] == 240.0
+    assert series[0]["fuel_own"] == 180.0
+    assert series[0]["volume"] == 70.0
+    # month_fuel_spend (budżet) nadal liczy całość paliwa
+    assert st.month_fuel_spend(fillups, "2025-01") == 420.0
 
 
 def test_segment_consumption_by_fillup():
