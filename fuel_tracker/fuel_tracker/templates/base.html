@@ -17,6 +17,7 @@
     <a href="{{ base }}/expenses" {% if active == 'expenses' %}class="active"{% endif %}>Wydatki</a>
     <a href="{{ base }}/settings" {% if active == 'settings' %}class="active"{% endif %}>Ustawienia</a>
   </div>
+  <span class="nav-version">v{{ version }}</span>
 </nav>
 <main class="main">
 {% block content %}{% endblock %}

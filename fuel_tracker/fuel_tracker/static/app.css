@@ -53,6 +53,7 @@ body {
   padding: 6px 10px; border-radius: 8px; font-weight: 500;
 }
 .nav-links a.active, .nav-links a:hover { background: var(--grid); color: var(--ink); }
+.nav-version { color: var(--muted); font-size: 11px; margin-left: 4px; }
 
 .main { max-width: 860px; margin: 0 auto; padding: 14px 14px 90px; }
 

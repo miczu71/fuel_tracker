@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.4
+
+- **Fix (właściwy) problemu z cache na telefonie**: diagnoza po 0.4.2/0.4.3
+  wykazała, że WebView aplikacji HA Companion trzyma w trwałym cache dyskowym
+  **sam HTML** (strony nie miały żadnych nagłówków `Cache-Control`) i serwuje
+  go bez kontaktu z serwerem — więc stemplowanie statyk `?v=` nigdy nie
+  docierało do telefonu, a force-close aplikacji nie czyści tego cache.
+  Teraz serwer wysyła `Cache-Control: no-store` dla stron HTML i API oraz
+  `public, max-age=31536000, immutable` dla statyk (bezpieczne dzięki `?v=`).
+  **Jednorazowo po tej aktualizacji** na telefonie trzeba wyczyścić pamięć
+  podręczną WebView (Ustawienia → Aplikacje towarzyszące → Rozwiązywanie
+  problemów), potem problem nie wróci.
+- **Badge wersji w pasku nawigacji** (`v0.4.4`) — od razu widać, którą wersję
+  UI renderuje dane urządzenie (stary HTML z cache nie ma badge wcale).
+
+## 0.4.3
+
+- Bump wersji bez zmian w kodzie — ponowienie cache-bust z 0.4.2 (nieskuteczne
+  na telefonie; patrz 0.4.4).
+
 ## 0.4.2
 
 - **Fix: stary `app.js`/`app.css` z cache przeglądarki po aktualizacji**

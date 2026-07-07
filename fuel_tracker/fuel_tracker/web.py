@@ -36,6 +36,18 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         # trzymać stary JS z cache po aktualizacji add-onu (patrz CHANGELOG 0.4.2).
         return {"version": __version__}
 
+    @app.after_request
+    def cache_headers(resp):
+        # WebView Androida (HA Companion) cache'uje na dysku HTML bez nagłówków
+        # i serwuje go bez rewalidacji, przez co ?v= nigdy nie dociera do klienta
+        # (patrz CHANGELOG 0.4.4). Statyki są bezpieczne z długim cache dzięki
+        # stemplowaniu ?v=<wersja> w base.html/map.html.
+        if request.path.startswith("/static/"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
+
     def conn() -> sqlite3.Connection:
         if "db" not in g:
             g.db = dbm.get_conn(db_path)
