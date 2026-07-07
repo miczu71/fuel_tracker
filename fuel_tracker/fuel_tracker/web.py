@@ -12,6 +12,7 @@ from flask import Flask, Response, g, jsonify, render_template, request
 
 from . import (csv_fuelio, currency as cur_mod, db as dbm, importer_drivvo,
                prices as pr, queries, stations as stn, stats as st)
+from . import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,12 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
                ha_state: Optional[Callable[[str], dict | None]] = None) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
+
+    @app.context_processor
+    def inject_version():
+        # Cache-busting statyk (app.js/app.css) — telefony/WebView potrafią
+        # trzymać stary JS z cache po aktualizacji add-onu (patrz CHANGELOG 0.4.2).
+        return {"version": __version__}
 
     def conn() -> sqlite3.Connection:
         if "db" not in g:

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2
+
+- **Fix: stary `app.js`/`app.css` z cache przeglądarki po aktualizacji**
+  (zwłaszcza na telefonie/WebView aplikacji HA) — strona „Statystyki"
+  bywała całkowicie pusta (`FT.initStatistics` nieznane starej wersji JS),
+  a wykres „Koszty miesięczne" pokazywał się bez serii „Paliwo prywatne"
+  z 0.4.1. Statyki (`app.js`, `app.css`, `chart.umd.min.js`, `leaflet.js`,
+  `leaflet.css`) są teraz ostemplowane numerem wersji (`?v=0.4.2`),
+  co wymusza pobranie świeżych plików po każdym wydaniu.
+
 ## 0.4.1
 
 - **Pulpit — wykres „Koszty miesięczne"**: tankowania opłacone prywatnie

@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head"><h1>Mapa tankowań</h1></div>
 <div class="card">
-  <link rel="stylesheet" href="{{ base }}/static/leaflet.css">
+  <link rel="stylesheet" href="{{ base }}/static/leaflet.css?v={{ version }}">
   <div id="map" class="map"></div>
   <div class="chips map-legend">
     <span class="chip"><span class="dot dot-fleet"></span> karta ORLEN Flota</span>
@@ -15,6 +15,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ base }}/static/leaflet.js"></script>
+<script src="{{ base }}/static/leaflet.js?v={{ version }}"></script>
 <script>FT.initMap();</script>
 {% endblock %}
