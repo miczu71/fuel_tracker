@@ -113,3 +113,14 @@ def test_delete_vehicle_refuses_with_history(conn, vehicle_id):
     ok, reason = dbm.delete_vehicle(conn, other_id)
     assert ok is False
     assert dbm.get_vehicle(conn, other_id) is not None
+
+
+def test_create_vehicle_with_lease_kwargs(conn, vehicle_id):
+    new_id = dbm.create_vehicle(
+        conn, "Mazda", 45.0, "PB95", lease_start="2025-01-01",
+        lease_end="2028-12-31", lease_km_limit=90000, monthly_rate=1850.0)
+    v = dbm.get_vehicle(conn, new_id)
+    assert v["lease_start"] == "2025-01-01"
+    assert v["lease_end"] == "2028-12-31"
+    assert v["lease_km_limit"] == 90000
+    assert v["monthly_rate"] == 1850.0

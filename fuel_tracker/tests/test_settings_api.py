@@ -1,4 +1,4 @@
-"""API ustawień/pojazdu/toggle automatyzacji (0.7.0) — Flask test client."""
+"""API ustawień/pojazdu i powiadomień (0.7.0/0.9.0) — Flask test client."""
 import pytest
 
 from fuel_tracker import db as dbm
@@ -6,32 +6,16 @@ from fuel_tracker.web import create_app
 
 
 @pytest.fixture
-def calls():
-    return []
-
-
-@pytest.fixture
-def client(tmp_path, calls):
+def client(tmp_path):
     db_path = str(tmp_path / "web.db")
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
     vid = dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
     c.close()
 
-    def ha_state(entity_id):
-        if entity_id == "automation.budzet":
-            return {"state": "on"}
-        return None
-
-    def ha_call_service(domain, service, data):
-        calls.append((domain, service, data))
-        if data.get("entity_id") == "automation.nieznana":
-            return None
-        return {"ok": True}
-
     app = create_app(
         db_path=db_path, config={},
-        ha_state=ha_state, ha_call_service=ha_call_service)
+        ha_services=lambda: ["notify.family", "notify.mobile_app_op12"])
     app.testing = True
     app.test_vehicle_id = vid
     return app.test_client()
@@ -62,16 +46,58 @@ def test_put_settings_takes_effect_without_restart(client):
     assert after["monthly_budget"] == 500.0
 
 
-def test_get_settings_includes_automation_state_when_configured(client):
-    client.put("/api/settings",
-              json={"alert_budget_automation": "automation.budzet"})
+def test_get_settings_alert_defaults(client):
     s = client.get("/api/settings").get_json()
-    assert s["alert_budget_automation_state"] == "on"
+    assert s["notify_service"] == "notify.mobile_app_op12"
+    assert s["alert_budget_enabled"] == 1
+    assert s["alert_cheap_fuel_enabled"] == 1
+    assert s["alert_lease_enabled"] == 1
+    assert s["alert_budget_threshold"] == 100.0
+    assert s["alert_cheap_fuel_delta"] == 0.20
+    assert s["alert_lease_km_threshold"] == 1000
 
 
-def test_get_settings_automation_state_null_when_not_configured(client):
+def test_put_alert_settings_roundtrip(client):
+    r = client.put("/api/settings", json={
+        "notify_service": "notify.family",
+        "alert_budget_enabled": 0,
+        "alert_budget_threshold": 250.0,
+        "alert_cheap_fuel_delta": 0.35,
+        "alert_lease_km_threshold": 2000})
+    assert r.status_code == 200
     s = client.get("/api/settings").get_json()
-    assert s["alert_budget_automation_state"] is None
+    assert s["notify_service"] == "notify.family"
+    # int 0/1, nie bool — "0" po stronie bazy musi wrócić jako 0 (falsy)
+    assert s["alert_budget_enabled"] == 0
+    assert s["alert_budget_threshold"] == 250.0
+    assert s["alert_cheap_fuel_delta"] == 0.35
+    assert s["alert_lease_km_threshold"] == 2000
+
+
+def test_notify_service_slash_format_normalized_on_read(client):
+    client.put("/api/settings", json={"notify_service": "notify/family"})
+    s = client.get("/api/settings").get_json()
+    assert s["notify_service"] == "notify.family"
+
+
+def test_ha_services_returns_notify_list(client):
+    r = client.get("/api/ha-services")
+    assert r.status_code == 200
+    assert r.get_json()["services"] == [
+        "notify.family", "notify.mobile_app_op12"]
+
+
+def test_ha_services_empty_without_callable(tmp_path):
+    db_path = str(tmp_path / "web2.db")
+    c = dbm.get_conn(db_path)
+    dbm.migrate(c)
+    dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
+    c.close()
+    app = create_app(db_path=db_path, config={})
+    app.testing = True
+    r = app.test_client().get("/api/ha-services")
+    assert r.status_code == 200
+    assert r.get_json()["services"] == []
 
 
 def test_get_vehicle(client):
@@ -96,30 +122,23 @@ def test_put_vehicle_unknown_id_404(client):
     assert client.put("/api/vehicles/999", json={"name": "x"}).status_code == 404
 
 
-def test_toggle_automation_success(client, calls):
-    client.put("/api/settings",
-              json={"alert_budget_automation": "automation.budzet"})
-    r = client.post("/api/settings/toggle-automation",
-                    json={"key": "alert_budget_automation", "turn_on": False})
-    assert r.status_code == 200
-    assert calls == [("automation", "turn_off", {"entity_id": "automation.budzet"})]
+def test_create_vehicle_with_lease_fields(client):
+    r = client.post("/api/vehicles", json={
+        "name": "Mazda", "tank_capacity_l": 45.0, "fuel_type": "PB95",
+        "lease_start": "2025-01-01", "lease_end": "2028-12-31",
+        "lease_km_limit": 90000, "monthly_rate": 1850.0})
+    assert r.status_code == 201
+    v = client.get(f"/api/vehicles/{r.get_json()['id']}").get_json()
+    assert v["lease_start"] == "2025-01-01"
+    assert v["lease_end"] == "2028-12-31"
+    assert v["lease_km_limit"] == 90000
+    assert v["monthly_rate"] == 1850.0
 
 
-def test_toggle_automation_not_configured_400(client):
-    r = client.post("/api/settings/toggle-automation",
-                    json={"key": "alert_budget_automation", "turn_on": True})
-    assert r.status_code == 400
-
-
-def test_toggle_automation_unknown_key_400(client):
-    r = client.post("/api/settings/toggle-automation",
-                    json={"key": "bogus", "turn_on": True})
-    assert r.status_code == 400
-
-
-def test_toggle_automation_ha_failure_502(client):
-    client.put("/api/settings",
-              json={"alert_budget_automation": "automation.nieznana"})
-    r = client.post("/api/settings/toggle-automation",
-                    json={"key": "alert_budget_automation", "turn_on": True})
-    assert r.status_code == 502
+def test_create_vehicle_without_lease_fields(client):
+    r = client.post("/api/vehicles", json={
+        "name": "Fabia", "tank_capacity_l": 45.0, "fuel_type": "PB95"})
+    assert r.status_code == 201
+    v = client.get(f"/api/vehicles/{r.get_json()['id']}").get_json()
+    assert v["lease_start"] is None
+    assert v["lease_km_limit"] is None

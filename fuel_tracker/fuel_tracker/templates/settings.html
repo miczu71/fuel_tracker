@@ -7,21 +7,15 @@
 <div class="card">
   <div class="card-title">Pojazdy</div>
   <p class="muted">Aktywny pojazd decyduje o sensorach MQTT, pulpicie i
-  statystykach. Usunięcie działa tylko dla pojazdu bez historii
+  statystykach. „Edytuj" otwiera formularz z aktualnymi wartościami pojazdu
+  (także leasing). Usunięcie działa tylko dla pojazdu bez historii
   tankowań/wydatków — w przeciwnym razie zarchiwizuj.</p>
   <div id="vehicle-list"></div>
-  <form class="form" id="vehicle-add-form">
-    <label>Nazwa <input type="text" id="new-veh-name" required></label>
-    <label>Pojemność baku (L)
-      <input type="number" step="0.1" min="1" id="new-veh-tank" required></label>
-    <label>Domyślne paliwo <input type="text" id="new-veh-fuel" required></label>
-    <button type="submit" class="btn primary">Dodaj pojazd</button>
-  </form>
-</div>
-
-<div class="card">
-  <div class="card-title">Aktywny pojazd</div>
-  <form class="form" id="vehicle-form">
+  <button type="button" class="btn primary" id="vehicle-add-btn">
+    + Dodaj pojazd</button>
+  <form class="form" id="vehicle-form" hidden>
+    <div class="card-title" id="vehicle-form-title"></div>
+    <input type="hidden" id="veh-id">
     <label>Nazwa <input type="text" id="veh-name" required></label>
     <label>Pojemność baku (L) <input type="number" step="0.1" min="1" id="veh-tank" required></label>
     <label>Domyślne paliwo <input type="text" id="veh-fuel" required></label>
@@ -31,7 +25,10 @@
       <input type="number" step="1" min="0" id="veh-lease-limit"></label>
     <label>Rata miesięczna (PLN)
       <input type="number" step="0.01" min="0" id="veh-lease-rate"></label>
-    <button type="submit" class="btn primary">Zapisz</button>
+    <div class="form-actions">
+      <button type="submit" class="btn primary">Zapisz</button>
+      <button type="button" class="btn" id="veh-cancel">Anuluj</button>
+    </div>
   </form>
 </div>
 
@@ -58,11 +55,33 @@
 
 <div class="card">
   <div class="card-title">Powiadomienia</div>
-  <p class="muted">Progi i treść alertów (budżet, tanie paliwo, tempo
-  leasingu) edytuje się w pakiecie automatyzacji HA — patrz README
-  „Integracja z HA". Tutaj można podpiąć encję automatyzacji, żeby
-  włączać/wyłączać dany alert bez wchodzenia do Home Assistant.</p>
-  <div id="automation-rows"></div>
+  <p class="muted">Add-on sprawdza progi co 15 minut i po każdej zmianie
+  danych; powiadamia przy przekroczeniu progu, ponownie dopiero po powrocie
+  do normy (anty-spam 24 h).</p>
+  <form class="form" id="notify-form">
+    <label>Usługa powiadomień
+      <select id="set-notify-service"></select>
+      <span class="muted">np. notify.mobile_app_op12</span></label>
+    <div class="alert-row">
+      <label class="check">
+        <input type="checkbox" id="alert-budget-on"> Alert budżetu</label>
+      <label>Próg ostrzeżenia (PLN)
+        <input type="number" step="1" min="0" id="alert-budget-threshold"></label>
+    </div>
+    <div class="alert-row">
+      <label class="check">
+        <input type="checkbox" id="alert-cheap-on"> Tanie paliwo w regionie</label>
+      <label>Różnica ceny (PLN/L)
+        <input type="number" step="0.01" min="0" id="alert-cheap-delta"></label>
+    </div>
+    <div class="alert-row">
+      <label class="check">
+        <input type="checkbox" id="alert-lease-on"> Zapas km leasingu</label>
+      <label>Próg ostrzeżenia (km)
+        <input type="number" step="100" min="0" id="alert-lease-km"></label>
+    </div>
+    <button type="submit" class="btn primary">Zapisz</button>
+  </form>
 </div>
 
 <div class="card">
@@ -123,4 +142,4 @@
   <a class="btn" href="api/export/fuelio.csv">Pobierz Fuelio CSV</a>
 </div>
 {% endblock %}
-{% block scripts %}<script>FT.initSettings({{ vehicle_id }});</script>{% endblock %}
+{% block scripts %}<script>FT.initSettings();</script>{% endblock %}

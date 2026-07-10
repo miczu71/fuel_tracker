@@ -625,67 +625,97 @@ window.FT = (function () {
   }
 
   // ── Ustawienia / import ─────────────────────────────────────────────────
-  const ALERT_AUTOMATION_LABELS = {
-    alert_budget_automation: "Alert budżetu",
-    alert_cheap_fuel_automation: "Tanie paliwo w regionie",
-    alert_lease_automation: "Zapas km leasingu",
-  };
+  function initSettings() {
+    const vehicleForm = document.getElementById("vehicle-form");
 
-  function initSettings(vehicleId) {
-    async function loadVehicleForm() {
-      const v = await getJSON(`api/vehicles/${vehicleId}`);
-      document.getElementById("veh-name").value = v.name;
-      document.getElementById("veh-tank").value = v.tank_capacity_l;
-      document.getElementById("veh-fuel").value = v.fuel_type;
-      document.getElementById("veh-lease-start").value = v.lease_start || "";
-      document.getElementById("veh-lease-end").value = v.lease_end || "";
-      document.getElementById("veh-lease-limit").value = v.lease_km_limit ?? "";
-      document.getElementById("veh-lease-rate").value = v.monthly_rate ?? "";
+    function openVehicleForm(v) {
+      document.getElementById("vehicle-form-title").textContent =
+        v ? `Edycja: ${v.name}` : "Nowy pojazd";
+      document.getElementById("veh-id").value = v ? v.id : "";
+      document.getElementById("veh-name").value = v ? v.name : "";
+      document.getElementById("veh-tank").value = v ? v.tank_capacity_l : "";
+      document.getElementById("veh-fuel").value = v ? v.fuel_type : "";
+      document.getElementById("veh-lease-start").value =
+        (v && v.lease_start) || "";
+      document.getElementById("veh-lease-end").value = (v && v.lease_end) || "";
+      document.getElementById("veh-lease-limit").value =
+        v && v.lease_km_limit != null ? v.lease_km_limit : "";
+      document.getElementById("veh-lease-rate").value =
+        v && v.monthly_rate != null ? v.monthly_rate : "";
+      vehicleForm.hidden = false;
+      vehicleForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      document.getElementById("veh-name").focus();
     }
-    loadVehicleForm();
-    document.getElementById("vehicle-form").addEventListener(
-      "submit", async (e) => {
-        e.preventDefault();
-        const limit = document.getElementById("veh-lease-limit").value;
-        const rate = document.getElementById("veh-lease-rate").value;
-        await sendJSON(`api/vehicles/${vehicleId}`, "PUT", {
-          name: document.getElementById("veh-name").value.trim(),
-          tank_capacity_l: parseFloat(document.getElementById("veh-tank").value),
-          fuel_type: document.getElementById("veh-fuel").value.trim(),
-          lease_start: document.getElementById("veh-lease-start").value || null,
-          lease_end: document.getElementById("veh-lease-end").value || null,
-          lease_km_limit: limit ? parseInt(limit, 10) : null,
-          monthly_rate: rate ? parseFloat(rate) : null,
-        });
+
+    function closeVehicleForm() {
+      vehicleForm.hidden = true;
+    }
+
+    document.getElementById("vehicle-add-btn").addEventListener(
+      "click", () => openVehicleForm(null));
+    document.getElementById("veh-cancel").addEventListener(
+      "click", closeVehicleForm);
+
+    vehicleForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = document.getElementById("veh-id").value;
+      const limit = document.getElementById("veh-lease-limit").value;
+      const rate = document.getElementById("veh-lease-rate").value;
+      const payload = {
+        name: document.getElementById("veh-name").value.trim(),
+        tank_capacity_l: parseFloat(document.getElementById("veh-tank").value),
+        fuel_type: document.getElementById("veh-fuel").value.trim(),
+        lease_start: document.getElementById("veh-lease-start").value || null,
+        lease_end: document.getElementById("veh-lease-end").value || null,
+        lease_km_limit: limit ? parseInt(limit, 10) : null,
+        monthly_rate: rate ? parseFloat(rate) : null,
+      };
+      const r = await fetch(id ? `api/vehicles/${id}` : "api/vehicles", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(data.error || `HTTP ${r.status}`); return; }
+      closeVehicleForm();
+      loadVehicleList();
+    });
 
     const vehicleList = document.getElementById("vehicle-list");
     async function loadVehicleList() {
       const rows = await getJSON("api/vehicles");
       vehicleList.innerHTML = `
         <div class="table-wrap"><table class="table">
-          <thead><tr><th>Nazwa</th><th>Stan</th><th>Leasing</th><th></th></tr></thead>
+          <thead><tr><th>Nazwa</th><th>Paliwo</th>
+          <th class="num">Bak (L)</th><th>Stan</th><th>Leasing</th><th></th></tr></thead>
           <tbody>${rows.map((v) => {
             const badge = v.active ? '<span class="verify-ok">aktywny</span>'
               : v.archived ? '<span class="muted">zarchiwizowany</span>' : "";
             const lease = v.lease_km_limit
               ? `${fmt(v.lease_km_limit, 0)} km${v.lease_end ? " do " + v.lease_end : ""}`
               : "–";
-            const actions = [];
+            const actions = [
+              `<button type="button" class="btn small" data-edit="${v.id}">Edytuj</button>`];
             if (!v.active && !v.archived) actions.push(
-              `<button type="button" class="btn" data-activate="${v.id}">Ustaw aktywny</button>`);
+              `<button type="button" class="btn small" data-activate="${v.id}">Aktywuj</button>`);
             if (!v.archived) actions.push(
-              `<button type="button" class="btn" data-archive="${v.id}">Archiwizuj</button>`);
+              `<button type="button" class="btn small" data-archive="${v.id}">Archiwizuj</button>`);
             else actions.push(
-              `<button type="button" class="btn" data-unarchive="${v.id}">Przywróć</button>`);
+              `<button type="button" class="btn small" data-unarchive="${v.id}">Przywróć</button>`);
             if (!v.active) actions.push(
-              `<button type="button" class="btn" data-delete="${v.id}">Usuń</button>`);
-            return `<tr>
-              <td>${v.name}</td><td>${badge}</td><td>${lease}</td>
+              `<button type="button" class="btn small" data-delete="${v.id}">Usuń</button>`);
+            return `<tr${v.active ? ' class="row-active"' : ""}>
+              <td>${v.name}</td><td>${v.fuel_type}</td>
+              <td class="num">${fmt(v.tank_capacity_l, 1)}</td>
+              <td>${badge}</td><td>${lease}</td>
               <td>${actions.join(" ")}</td></tr>`;
           }).join("")}</tbody>
         </table></div>`;
 
+      vehicleList.querySelectorAll("[data-edit]").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          openVehicleForm(await getJSON(`api/vehicles/${btn.dataset.edit}`));
+        }));
       vehicleList.querySelectorAll("[data-activate]").forEach((btn) =>
         btn.addEventListener("click", async () => {
           await fetch(`api/vehicles/${btn.dataset.activate}/activate`,
@@ -717,60 +747,16 @@ window.FT = (function () {
     }
     loadVehicleList();
 
-    document.getElementById("vehicle-add-form").addEventListener(
-      "submit", async (e) => {
-        e.preventDefault();
-        await sendJSON("api/vehicles", "POST", {
-          name: document.getElementById("new-veh-name").value.trim(),
-          tank_capacity_l:
-            parseFloat(document.getElementById("new-veh-tank").value),
-          fuel_type: document.getElementById("new-veh-fuel").value.trim(),
-        });
-        e.target.reset();
-        loadVehicleList();
-      });
-
-    const automationBox = document.getElementById("automation-rows");
-    function renderAutomationRows(s) {
-      automationBox.innerHTML = Object.entries(ALERT_AUTOMATION_LABELS)
-        .map(([key, label]) => {
-          const entity = s[key] || "";
-          const state = s[`${key}_state`];
-          const stateLabel = !entity ? "" :
-            state === null ? '<span class="muted">brak encji</span>' :
-            state === "on" ? '<span class="verify-ok">włączona</span>' :
-                            '<span class="muted">wyłączona</span>';
-          const toggleBtn = entity ? `
-            <button type="button" class="btn" data-toggle="${key}"
-                    data-turn-on="${state !== "on"}">
-              ${state === "on" ? "Wyłącz" : "Włącz"}
-            </button>` : "";
-          return `
-            <div class="automation-row">
-              <label>${label}
-                <input type="text" data-automation="${key}" value="${entity}"
-                       placeholder="automation....">
-              </label>
-              ${stateLabel} ${toggleBtn}
-            </div>`;
-        }).join("");
-
-      automationBox.querySelectorAll("[data-automation]").forEach((input) => {
-        input.addEventListener("change", async () => {
-          await sendJSON("api/settings", "PUT",
-            { [input.dataset.automation]: input.value.trim() });
-          renderAutomationRows(await getJSON("api/settings"));
-        });
-      });
-      automationBox.querySelectorAll("[data-toggle]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          await sendJSON("api/settings/toggle-automation", "POST", {
-            key: btn.dataset.toggle,
-            turn_on: btn.dataset.turnOn === "true",
-          });
-          renderAutomationRows(await getJSON("api/settings"));
-        });
-      });
+    async function loadNotifyServices(current) {
+      const select = document.getElementById("set-notify-service");
+      let services = [];
+      try {
+        services = (await getJSON("api/ha-services")).services || [];
+      } catch (e) { /* HA API niedostępne — zostaje sama bieżąca wartość */ }
+      if (current && !services.includes(current)) services.unshift(current);
+      select.innerHTML = services
+        .map((s) => `<option value="${s}">${s}</option>`).join("");
+      select.value = current || (services[0] || "");
     }
 
     async function loadSettingsForms() {
@@ -781,9 +767,42 @@ window.FT = (function () {
       document.getElementById("set-odometer").value = s.odometer_entity;
       document.getElementById("set-fuel-level").value = s.fuel_level_entity;
       document.getElementById("set-location").value = s.location_entity;
-      renderAutomationRows(s);
+      document.getElementById("alert-budget-on").checked =
+        !!s.alert_budget_enabled;
+      document.getElementById("alert-budget-threshold").value =
+        s.alert_budget_threshold;
+      document.getElementById("alert-cheap-on").checked =
+        !!s.alert_cheap_fuel_enabled;
+      document.getElementById("alert-cheap-delta").value =
+        s.alert_cheap_fuel_delta;
+      document.getElementById("alert-lease-on").checked =
+        !!s.alert_lease_enabled;
+      document.getElementById("alert-lease-km").value =
+        s.alert_lease_km_threshold;
+      await loadNotifyServices(s.notify_service);
     }
     loadSettingsForms();
+
+    document.getElementById("notify-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        await sendJSON("api/settings", "PUT", {
+          notify_service:
+            document.getElementById("set-notify-service").value.trim(),
+          alert_budget_enabled:
+            document.getElementById("alert-budget-on").checked ? 1 : 0,
+          alert_budget_threshold: parseFloat(
+            document.getElementById("alert-budget-threshold").value) || 0,
+          alert_cheap_fuel_enabled:
+            document.getElementById("alert-cheap-on").checked ? 1 : 0,
+          alert_cheap_fuel_delta: parseFloat(
+            document.getElementById("alert-cheap-delta").value) || 0,
+          alert_lease_enabled:
+            document.getElementById("alert-lease-on").checked ? 1 : 0,
+          alert_lease_km_threshold: parseInt(
+            document.getElementById("alert-lease-km").value, 10) || 0,
+        });
+      });
 
     document.getElementById("budget-form").addEventListener(
       "submit", async (e) => {

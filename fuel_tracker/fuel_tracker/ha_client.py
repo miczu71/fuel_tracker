@@ -68,6 +68,22 @@ def notify(service: str, title: str, message: str) -> bool:
         return False
 
 
+def list_services() -> list[str]:
+    """Usługi notify.* dostępne w HA (do selecta w Ustawieniach); [] przy błędzie."""
+    try:
+        resp = requests.get(f"{_BASE}/services", headers=_headers(), timeout=10)
+        if resp.status_code != 200:
+            logger.warning("HA services -> HTTP %d", resp.status_code)
+            return []
+        for domain in resp.json():
+            if domain.get("domain") == "notify":
+                return sorted(f"notify.{name}"
+                              for name in domain.get("services", {}))
+    except (requests.RequestException, ValueError) as exc:
+        logger.warning("HA API niedostępne: %s", exc)
+    return []
+
+
 def call_service(domain: str, service: str, data: dict,
                  return_response: bool = False,
                  timeout: int = 90) -> dict | None:

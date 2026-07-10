@@ -27,20 +27,10 @@ _DRIVVO_VERIFY = {
     "volume": "sensor.skoda_superb_refuelling_volume_total",
 }
 
-# Klucze ustawień wskazujące na automatyzację HA do włączania/wyłączania
-# z Ustawień (0.7.0) — same automatyzacje (progi, notify) żyją w YAML
-# użytkownika, add-on tylko przełącza je on/off przez HA API.
-_ALERT_AUTOMATION_KEYS = (
-    "alert_budget_automation", "alert_cheap_fuel_automation",
-    "alert_lease_automation",
-)
-
-
 def create_app(db_path: str, config: dict,
                on_data_change: Optional[Callable[[], None]] = None,
                ha_state: Optional[Callable[[str], dict | None]] = None,
-               ha_call_service: Optional[
-                   Callable[[str, str, dict], dict | None]] = None) -> Flask:
+               ha_services: Optional[Callable[[], list[str]]] = None) -> Flask:
     app = Flask(__name__)
     # 16 MB — zdjęcia paragonów z aparatu telefonu miewają 5–10 MB.
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
@@ -143,22 +133,18 @@ def create_app(db_path: str, config: dict,
     @app.get("/settings")
     def page_settings():
         return render_template("settings.html", base=base(),
-                               vehicle=live_vehicle()["name"],
-                               vehicle_id=current_vehicle_id())
+                               vehicle=live_vehicle()["name"])
 
     # ── API: ustawienia / pojazd (0.7.0, edycja bez restartu) ──────────────
 
     @app.get("/api/settings")
     def api_settings_get():
-        result = dict(live_settings())
-        for key in _ALERT_AUTOMATION_KEYS:
-            entity_id = result[key]
-            state = None
-            if entity_id and ha_state:
-                data = ha_state(entity_id)
-                state = data["state"] if data else None
-            result[f"{key}_state"] = state
-        return jsonify(result)
+        return jsonify(live_settings())
+
+    @app.get("/api/ha-services")
+    def api_ha_services():
+        services = ha_services() if ha_services else []
+        return jsonify({"services": services or []})
 
     @app.put("/api/settings")
     def api_settings_put():
@@ -185,9 +171,15 @@ def create_app(db_path: str, config: dict,
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Wymagana nazwa"}), 400
+        limit = data.get("lease_km_limit")
+        rate = data.get("monthly_rate")
         new_id = dbm.create_vehicle(
             conn(), name, float(data.get("tank_capacity_l") or 0),
-            data.get("fuel_type") or "PB95")
+            data.get("fuel_type") or "PB95",
+            lease_start=data.get("lease_start") or None,
+            lease_end=data.get("lease_end") or None,
+            lease_km_limit=int(limit) if limit else None,
+            monthly_rate=float(rate) if rate else None)
         changed()
         return jsonify({"id": new_id}), 201
 
@@ -241,24 +233,6 @@ def create_app(db_path: str, config: dict,
         if not dbm.unarchive_vehicle(conn(), vid):
             return jsonify({"error": "not found"}), 404
         changed()
-        return jsonify({"ok": True})
-
-    @app.post("/api/settings/toggle-automation")
-    def api_settings_toggle_automation():
-        data = request.get_json(force=True)
-        key = data.get("key")
-        if key not in _ALERT_AUTOMATION_KEYS:
-            return jsonify({"error": "Nieznany klucz"}), 400
-        entity_id = live_settings()[key]
-        if not entity_id:
-            return jsonify({"error":
-                            "Encja automatyzacji nie skonfigurowana w Ustawieniach"}), 400
-        if not ha_call_service:
-            return jsonify({"error": "HA API niedostępne"}), 502
-        service = "turn_on" if data.get("turn_on") else "turn_off"
-        result = ha_call_service("automation", service, {"entity_id": entity_id})
-        if result is None:
-            return jsonify({"error": "Wywołanie usługi HA nieudane"}), 502
         return jsonify({"ok": True})
 
     # ── API: podsumowanie / wykresy ───────────────────────────────────────

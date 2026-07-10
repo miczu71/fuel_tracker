@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.9.0
+
+- **Pojazdy w jednej karcie** — karty „Pojazdy" i „Aktywny pojazd" scalone
+  w jedną: tabela wszystkich aut (nazwa, paliwo, bak, stan, leasing)
+  z wyróżnionym wierszem aktywnego, a per-wiersz przyciski Edytuj /
+  Aktywuj / Archiwizuj / Przywróć / Usuń. „Edytuj" otwiera pod tabelą
+  formularz **wypełniony aktualnymi wartościami** dowolnego pojazdu
+  (także zarchiwizowanego), łącznie z polami leasingu; „+ Dodaj pojazd"
+  otwiera ten sam formularz pusty — nowy pojazd można od razu założyć
+  z leasingiem (`POST /api/vehicles` przyjmuje `lease_start/lease_end/
+  lease_km_limit/monthly_rate`).
+- **Powiadomienia w add-onie** — alerty przestają żyć w automatyzacjach HA;
+  add-on sam sprawdza progi (co 15 min i po każdej zmianie danych, na tych
+  samych wartościach co sensory MQTT — moduł `notifications.py`) i wysyła
+  powiadomienia przez wybraną usługę HA. Karta „Powiadomienia" w
+  Ustawieniach: wybór usługi notify (lista z HA przez nowy
+  `GET /api/ha-services`), włącznik per alert i edytowalne progi —
+  budżet (PLN, domyślnie 100), tanie paliwo w regionie (PLN/L, domyślnie
+  0.20), zapas km leasingu (km, domyślnie 1000). Nowe klucze ustawień:
+  `notify_service`, `alert_{budget,cheap_fuel,lease}_enabled`,
+  `alert_budget_threshold`, `alert_cheap_fuel_delta`,
+  `alert_lease_km_threshold`.
+- **Anty-spam** — powiadomienie tylko przy wejściu w stan (ok → ostrzeżenie
+  → przekroczenie), ponowne dopiero po powrocie do normy, z oknem anty-flap
+  24 h per stan; nieudana wysyłka ponawiana przy następnym ticku. Stan
+  alertów w nowej tabeli `alert_state` (migracja #7) — przeżywa restarty.
+- **Usunięte**: endpoint `POST /api/settings/toggle-automation`, klucze
+  `alert_*_automation` (migracja #7 czyści je z bazy) i wiersze przełączania
+  automatyzacji w UI. Pakiet `fuel_tracker_package.yaml` w HA staje się
+  **zbędny** — po weryfikacji powiadomień usuń go z `configuration.yaml`.
+  Opcja `notify_service` jest teraz faktycznie używana (format kropkowy
+  `notify.mobile_app_op12`; stary zapis `notify/x` jest normalizowany).
+- 18 nowych testów (`test_notifications.py` + rozszerzenia
+  `test_settings_api.py`/`test_vehicles.py`): stany i eskalacje alertów,
+  dedup/anty-flap, retry po nieudanej wysyłce, migracja #7, tworzenie
+  pojazdu z leasingiem, roundtrip ustawień alertów (162/162 zielone).
+
 ## 0.8.0
 
 - **Pojazdy: cykl życia** — nowa karta „Pojazdy" w Ustawieniach: dodawanie,

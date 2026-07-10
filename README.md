@@ -74,14 +74,19 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 - **Ustawienia edytowalne w UI (bez restartu)** — budżet, waluta domyślna,
   region cen, dane pojazdu (nazwa/pojemność baku/domyślne paliwo) i encje HA
   (odometr/poziom paliwa/lokalizacja) zmienia się na stronie Ustawienia i
-  działa od razu. Karta „Powiadomienia" pozwala włączać/wyłączać z Ustawień
-  automatyzacje alertów zdefiniowane w HA (patrz „Integracja z HA") bez
-  wchodzenia do Home Assistant.
-- **Pojazdy: cykl życia** — karta „Pojazdy" w Ustawieniach: dodawanie,
-  archiwizacja/przywracanie i przełączanie aktywnego pojazdu, wszystko bez
-  restartu add-onu. Sensory MQTT, pulpit i statystyki zawsze dotyczą
-  aktywnego pojazdu; historia zarchiwizowanego auta zostaje. Twarde
-  usunięcie działa tylko dla pojazdu bez tankowań/wydatków w historii.
+  działa od razu; każdy formularz pokazuje aktualne wartości.
+- **Pojazdy: cykl życia w jednej karcie** — tabela wszystkich aut
+  z wyróżnionym aktywnym; per-wiersz Edytuj (formularz wypełniony aktualnymi
+  wartościami, także leasing: start/koniec/limit km/rata), Aktywuj,
+  Archiwizuj/Przywróć i twarde Usuń (tylko bez historii tankowań/wydatków).
+  Sensory MQTT, pulpit i statystyki zawsze dotyczą aktywnego pojazdu;
+  historia zarchiwizowanego auta zostaje.
+- **Powiadomienia wbudowane (od 0.9.0)** — add-on sam sprawdza progi
+  (co 15 min i po każdej zmianie danych) i wysyła alerty przez wybraną
+  usługę HA: budżet na wyczerpaniu/przekroczony, tanie paliwo w regionie,
+  zapas km leasingu topnieje/przekroczony. Usługa notify, włączniki
+  i progi edytowalne w karcie „Powiadomienia"; anty-spam — alert tylko
+  przy wejściu w stan, ponownie po powrocie do normy (okno 24 h).
 
 ## Encje (MQTT discovery)
 
@@ -120,119 +125,32 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 > Rzeczywiste `entity_id` zależą od nazwy urządzenia — po pierwszym starcie
 > zweryfikuj je w **Narzędzia deweloperskie → Stany**.
 
-## Integracja z HA
+## Powiadomienia (wbudowane od 0.9.0)
 
-Sensory MQTT discovery są od razu gotowe do automatyzacji — wystarczy dodać
-poniższy pakiet do `packages/` i wpiąć go w `configuration.yaml`
-(`homeassistant.packages.fuel_tracker: !include packages/fuel_tracker.yaml`).
-Trzy gotowe alerty; podmień `notify.mobile_app_XXX` na swoją usługę
-powiadomień, a progi (100 PLN / 0,20 PLN/L / 1000 km) i skalę budżetu
-(`861` = `monthly_fuel_budget` − 123 PLN marginesu, dopasuj do swojej opcji)
-dopasuj do swoich liczb — encje mają prefiks zależny od `vehicle_name`
-(zweryfikuj rzeczywiste `entity_id` w **Narzędzia deweloperskie → Stany**
-zanim wkleisz do automatyzacji).
+Alerty (budżet, tanie paliwo w regionie, zapas km leasingu) są liczone
+i wysyłane przez sam add-on — nie potrzeba żadnych automatyzacji YAML.
+W karcie **Ustawienia → Powiadomienia** wybierasz usługę notify (lista
+pobierana z HA), włączasz/wyłączasz poszczególne alerty i ustawiasz progi:
 
-```yaml
-automation:
-  - id: "fuel_tracker_alert_budzetu"
-    alias: "Fuel Tracker: Alert budżetu paliwowego"
-    description: >-
-      Powiadamia gdy pozostały budżet paliwowy miesiąca spada poniżej
-      100 PLN (ostrzeżenie) lub zostaje przekroczony (poniżej 0).
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.superb_fuel_budget_left_month
-        below: 100
-        id: ostrzezenie
-      - platform: numeric_state
-        entity_id: sensor.superb_fuel_budget_left_month
-        below: 0
-        id: przekroczony
-    action:
-      - choose:
-          - conditions:
-              - condition: trigger
-                id: przekroczony
-            sequence:
-              - service: notify.mobile_app_XXX
-                data:
-                  title: "⛽ Budżet paliwowy przekroczony"
-                  message: >-
-                    Budżet miesiąca przekroczony o
-                    {{ (states('sensor.superb_fuel_budget_left_month') | float(0) | abs) | round(2) }} PLN.
-                    Prognoza na cały miesiąc:
-                    {{ states('sensor.superb_fuel_month_forecast_cost') | float(0) | round(0) }} PLN.
-        default:
-          - service: notify.mobile_app_XXX
-            data:
-              title: "⛽ Budżet paliwowy na wyczerpaniu"
-              message: >-
-                Zostało {{ states('sensor.superb_fuel_budget_left_month') | float(0) | round(2) }} PLN
-                budżetu paliwowego na ten miesiąc. Prognoza na cały miesiąc:
-                {{ states('sensor.superb_fuel_month_forecast_cost') | float(0) | round(0) }} PLN.
-    mode: single
+| Alert | Próg (domyślnie) | Kiedy powiadamia |
+|---|---|---|
+| Budżet paliwowy | 100 PLN | pozostały budżet miesiąca poniżej progu (ostrzeżenie) lub poniżej 0 (przekroczony) |
+| Tanie paliwo w regionie | 0.20 PLN/L | cena regionalna niższa od Twojego ostatniego tankowania o co najmniej próg |
+| Zapas km leasingu | 1000 km | zapas względem krzywej limitu poniżej progu (topnieje) lub poniżej 0 (przekroczony) |
 
-  - id: "fuel_tracker_tanie_paliwo"
-    alias: "Fuel Tracker: Tanie paliwo w regionie"
-    description: >-
-      Powiadamia gdy cena regionalna (`price_region`) jest co najmniej
-      0,20 PLN/L niższa od ceny z ostatniego tankowania — utrzymująca się
-      ponad godzinę.
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.superb_fuel_price_vs_region
-        above: 0.20
-        for: "01:00:00"
-    action:
-      - service: notify.mobile_app_XXX
-        data:
-          title: "⛽ Tanie paliwo w regionie"
-          message: >-
-            Cena regionalna {{ states('sensor.superb_fuel_region_fuel_price') }} PLN/L —
-            o {{ states('sensor.superb_fuel_price_vs_region') | float(0) | round(2) }} PLN/L
-            taniej niż Twoje ostatnie tankowanie
-            ({{ states('sensor.superb_fuel_last_fillup_price') }} PLN/L).
-    mode: single
+Progi są sprawdzane co 15 minut i po każdej zmianie danych. Anty-spam:
+powiadomienie przychodzi przy **wejściu** w stan (i przy eskalacji
+ostrzeżenie → przekroczenie), ponowne dopiero po powrocie do normy,
+z oknem anty-flap 24 h; nieudana wysyłka jest ponawiana przy następnym
+ticku. Stan alertów przeżywa restart add-onu.
 
-  - id: "fuel_tracker_tempo_leasingu"
-    alias: "Fuel Tracker: Zapas km leasingu topnieje"
-    description: >-
-      Powiadamia gdy zapas kilometrów względem krzywej limitu leasingu
-      (`odo_budget_entity`) spada poniżej 1000 km na dłużej niż 6 h
-      (topnieje) lub poniżej 0 (limit przekroczony).
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.odo_vs_budget
-        below: 1000
-        for: "06:00:00"
-        id: zapas
-      - platform: numeric_state
-        entity_id: sensor.odo_vs_budget
-        below: 0
-        id: przekroczony
-    action:
-      - choose:
-          - conditions:
-              - condition: trigger
-                id: przekroczony
-            sequence:
-              - service: notify.mobile_app_XXX
-                data:
-                  title: "🚗 Limit km leasingu przekroczony"
-                  message: >-
-                    Przebieg wyprzedza krzywą limitu leasingu o
-                    {{ (states('sensor.odo_vs_budget') | float(0) | abs) | round(0) }} km.
-                    Tempo roczne: {{ states('sensor.superb_fuel_projected_annual_km') }} km/rok.
-        default:
-          - service: notify.mobile_app_XXX
-            data:
-              title: "🚗 Zapas km leasingu topnieje"
-              message: >-
-                Zapas względem krzywej limitu leasingu:
-                {{ states('sensor.odo_vs_budget') | float(0) | round(0) }} km.
-                Tempo roczne: {{ states('sensor.superb_fuel_projected_annual_km') }} km/rok.
-    mode: single
-```
+> **Migracja z ≤0.8.x:** pakiet automatyzacji `fuel_tracker_package.yaml`
+> (dawna sekcja „Integracja z HA") jest zbędny — po zweryfikowaniu, że
+> powiadomienia z add-onu przychodzą, usuń wpis
+> `fuel_tracker: !include packages/fuel_tracker_package.yaml`
+> z `configuration.yaml` i sam plik pakietu, po czym zrestartuj HA.
+> Endpoint `POST /api/settings/toggle-automation` i klucze
+> `alert_*_automation` zostały usunięte.
 
 **Karta Lovelace** — encje z tabeli wyżej nadają się na kafelki
 `custom:mushroom-template-card` (mosaic budżet/tankowanie/zużycie) albo
@@ -260,6 +178,12 @@ powyższe sensory wystarczą jako dane wejściowe.
 > `odo_budget_entity` zostaje jako Supervisor-only ustawienie, używane
 > wyłącznie do wyświetlenia starego `sensor.odo_vs_budget` obok nowego
 > wyliczenia — do usunięcia po osobnej decyzji o wycofaniu szablonu.
+>
+> **Od 0.9.0:** `notify_service` to również tylko wartość startowa —
+> usługę, włączniki i progi alertów edytuje się w karcie „Powiadomienia".
+> Instalacje z ≤0.8.x mogą mieć zaseedowany stary format `notify/family` —
+> zapis ukośnikowy jest normalizowany do kropkowego, ale zweryfikuj usługę
+> w Ustawieniach po aktualizacji.
 
 | Opcja | Domyślnie | Opis |
 |---|---|---|
@@ -274,7 +198,7 @@ powyższe sensory wystarczą jako dane wejściowe.
 | `odo_budget_entity` | `sensor.odo_vs_budget` | Encja HA z zapasem km leasingu — tylko do porównania z nowym wyliczeniem per auto (strona Statystyki) |
 | `drivvo_email` / `drivvo_password` | — | Konto Drivvo do jednorazowego importu |
 | `drivvo_vehicle_id` | `0` | ID pojazdu w Drivvo (`0` = pierwszy z konta) |
-| `notify_service` | `notify/family` | Usługa powiadomień (nieużywana — alerty idą przez pakiet automatyzacji HA, patrz „Integracja z HA") |
+| `notify_service` | `notify.mobile_app_op12` | Usługa powiadomień dla wbudowanych alertów — wartość startowa, potem edycja w Ustawieniach (karta „Powiadomienia") |
 | `mqtt_host` / `mqtt_port` / `mqtt_user` / `mqtt_password` | `core-mosquitto` / `1883` | Broker MQTT |
 | `log_level` | `info` | `debug` / `info` / `warning` / `error` |
 | `backup_share` | `/share/fuel_tracker` | Katalog backupów i auto-importu |
@@ -291,14 +215,15 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 `POST /api/receipts/parse` · `GET /api/attachments/<id>` ·
 `GET /api/statistics` · `GET /api/report.csv` · `POST /api/import/csv` ·
 `POST /api/import/drivvo` · `GET /api/verify` · `GET /api/export/fuelio.csv` ·
-`GET|PUT /api/settings` · `POST /api/settings/toggle-automation` ·
-`GET /api/vehicles` · `POST /api/vehicles` · `GET|PUT|DELETE /api/vehicles/<id>` ·
+`GET|PUT /api/settings` · `GET /api/ha-services` ·
+`GET /api/vehicles` · `POST /api/vehicles` (od 0.9.0 także pola leasingu) ·
+`GET|PUT|DELETE /api/vehicles/<id>` ·
 `POST /api/vehicles/<id>/activate` · `POST /api/vehicles/<id>/archive` ·
 `POST /api/vehicles/<id>/unarchive` · `GET /api/health`
 
 ## Plan rozwoju
 
-- **0.9.0** — backup/restore w UI + PWA.
+- **0.10.0** — backup/restore w UI + PWA.
 
 ## Rozwój
 

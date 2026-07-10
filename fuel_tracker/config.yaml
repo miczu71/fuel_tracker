@@ -1,5 +1,5 @@
 name: Fuel Tracker
-version: "0.8.0"
+version: "0.9.0"
 slug: fuel_tracker
 description: >-
   Dziennik tankowań i wydatków samochodu w stylu Fuelio.
@@ -32,7 +32,7 @@ options:
   drivvo_email: ""
   drivvo_password: ""
   drivvo_vehicle_id: 0
-  notify_service: "notify/family"
+  notify_service: "notify.mobile_app_op12"
   mqtt_host: "core-mosquitto"
   mqtt_port: 1883
   mqtt_user: ""

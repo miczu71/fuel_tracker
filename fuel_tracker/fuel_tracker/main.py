@@ -9,7 +9,8 @@ from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import __version__, csv_fuelio, db as dbm, ha_client, prices, queries
+from . import __version__, csv_fuelio, db as dbm, ha_client, notifications
+from . import prices, queries
 from . import settings as settingsm
 from .publisher import MQTTPublisher
 from .web import create_app
@@ -92,6 +93,7 @@ def main() -> None:
         "odometer_entity": _env("ODOMETER_ENTITY"),
         "fuel_level_entity": _env("FUEL_LEVEL_ENTITY"),
         "location_entity": _env("LOCATION_ENTITY"),
+        "notify_service": _env("NOTIFY_SERVICE"),
     })
     # Pojazdy: cykl życia (0.8.0) — aktywny pojazd żyje w settings, nie jest
     # już zamrożony na jednym id; startowa rozdzielczość tylko dla
@@ -143,7 +145,7 @@ def main() -> None:
             vid = dbm.resolve_active_vehicle_id(
                 c, int(s.get("active_vehicle_id") or 0))
             vehicle = dbm.get_vehicle(c, vid)
-            mqtt_pub.publish(queries.sensor_values(
+            values = queries.sensor_values(
                 c, vid, s["monthly_fuel_budget"],
                 fuel_type=vehicle["fuel_type"],
                 price_region=s["price_region"],
@@ -151,7 +153,14 @@ def main() -> None:
                 lease_km_limit=vehicle["lease_km_limit"],
                 lease_start=vehicle["lease_start"],
                 lease_end=vehicle["lease_end"],
-                current_odometer=_current_odometer(s)))
+                current_odometer=_current_odometer(s))
+            mqtt_pub.publish(values)
+            try:
+                # Alerty liczone z tych samych wartości co sensory MQTT;
+                # błąd powiadomień nie może zepsuć publikacji.
+                notifications.evaluate(c, s, values, ha_client.notify)
+            except Exception:
+                logger.exception("Ewaluacja alertów nieudana")
         except Exception:
             logger.exception("Publikacja MQTT nieudana")
         finally:
@@ -192,7 +201,7 @@ def main() -> None:
         },
         on_data_change=publish_sensors,
         ha_state=ha_client.get_state,
-        ha_call_service=ha_client.call_service,
+        ha_services=ha_client.list_services,
     )
     logger.info("Web UI nasłuchuje na :8098 (ingress)")
     app.run(host="0.0.0.0", port=8098, debug=False, use_reloader=False)

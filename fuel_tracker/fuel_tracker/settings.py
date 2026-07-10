@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import sqlite3
 
+# Uwaga: przełączniki alertów jako int 0/1, nie bool — get_settings() typuje
+# konstruktorem, a bool("0") is True.
 SETTINGS_TYPES: dict[str, type] = {
     "monthly_fuel_budget": float,
     "default_currency": str,
@@ -15,12 +17,17 @@ SETTINGS_TYPES: dict[str, type] = {
     "odometer_entity": str,
     "fuel_level_entity": str,
     "location_entity": str,
-    "alert_budget_automation": str,
-    "alert_cheap_fuel_automation": str,
-    "alert_lease_automation": str,
+    "notify_service": str,
+    "alert_budget_enabled": int,
+    "alert_cheap_fuel_enabled": int,
+    "alert_lease_enabled": int,
+    "alert_budget_threshold": float,
+    "alert_cheap_fuel_delta": float,
+    "alert_lease_km_threshold": int,
     "active_vehicle_id": int,
 }
 
+# Progi domyślne odpowiadają dawnym automatyzacjom z fuel_tracker_package.yaml.
 DEFAULTS: dict[str, object] = {
     "monthly_fuel_budget": 0.0,
     "default_currency": "PLN",
@@ -28,11 +35,26 @@ DEFAULTS: dict[str, object] = {
     "odometer_entity": "",
     "fuel_level_entity": "",
     "location_entity": "",
-    "alert_budget_automation": "",
-    "alert_cheap_fuel_automation": "",
-    "alert_lease_automation": "",
+    "notify_service": "notify.mobile_app_op12",
+    "alert_budget_enabled": 1,
+    "alert_cheap_fuel_enabled": 1,
+    "alert_lease_enabled": 1,
+    "alert_budget_threshold": 100.0,
+    "alert_cheap_fuel_delta": 0.20,
+    "alert_lease_km_threshold": 1000,
     "active_vehicle_id": 0,
 }
+
+
+def normalize_notify_service(service: str) -> str:
+    """Ujednolica zapis do formatu kropkowego: 'notify/x' -> 'notify.x'.
+
+    Stare seedy z options.json używały formatu ścieżkowego HA API.
+    """
+    service = (service or "").strip()
+    if "/" in service and "." not in service:
+        service = service.replace("/", ".", 1)
+    return service
 
 
 def get_settings(conn: sqlite3.Connection) -> dict:
@@ -42,6 +64,7 @@ def get_settings(conn: sqlite3.Connection) -> dict:
     for key, typ in SETTINGS_TYPES.items():
         raw = stored.get(key)
         result[key] = typ(raw) if raw is not None else DEFAULTS[key]
+    result["notify_service"] = normalize_notify_service(result["notify_service"])
     return result
 
 

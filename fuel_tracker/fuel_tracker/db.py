@@ -152,6 +152,25 @@ _MIGRATIONS = [
     ALTER TABLE vehicles ADD COLUMN lease_km_limit INTEGER;
     ALTER TABLE vehicles ADD COLUMN monthly_rate REAL;
     """,
+    # v7 — powiadomienia w add-onie (0.9.0). alert_state trzyma ostatni stan
+    # każdego alertu (dedup + anty-flap 24 h, przeżywa restarty). Klucze
+    # alert_*_automation stają się zbędne — alerty nie żyją już
+    # w automatyzacjach HA, tylko w fuel_tracker.notifications.
+    """
+    CREATE TABLE alert_state (
+        alert TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT 'ok',
+        changed_at TEXT,
+        notified_state TEXT,
+        notified_at TEXT
+    );
+
+    DELETE FROM settings WHERE key IN (
+        'alert_budget_automation',
+        'alert_cheap_fuel_automation',
+        'alert_lease_automation'
+    );
+    """,
 ]
 
 
@@ -216,10 +235,15 @@ def update_vehicle(conn: sqlite3.Connection, vehicle_id: int, fields: dict) -> b
 
 
 def create_vehicle(conn: sqlite3.Connection, name: str, tank_capacity_l: float,
-                   fuel_type: str) -> int:
+                   fuel_type: str, lease_start: str | None = None,
+                   lease_end: str | None = None,
+                   lease_km_limit: int | None = None,
+                   monthly_rate: float | None = None) -> int:
     cur = conn.execute(
-        "INSERT INTO vehicles (name, tank_capacity_l, fuel_type) VALUES (?, ?, ?)",
-        (name, tank_capacity_l, fuel_type))
+        "INSERT INTO vehicles (name, tank_capacity_l, fuel_type, lease_start, "
+        "lease_end, lease_km_limit, monthly_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (name, tank_capacity_l, fuel_type, lease_start, lease_end,
+         lease_km_limit, monthly_rate))
     conn.commit()
     return cur.lastrowid
 
