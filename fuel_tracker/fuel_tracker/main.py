@@ -85,8 +85,7 @@ def main() -> None:
 
     conn = dbm.get_conn(db_path)
     dbm.migrate(conn)
-    vehicle_id = dbm.ensure_vehicle(conn, vehicle_name, tank_capacity,
-                                    default_fuel)
+    dbm.ensure_vehicle(conn, vehicle_name, tank_capacity, default_fuel)
     settingsm.seed_from_options(conn, {
         "monthly_fuel_budget": budget,
         "price_region": price_region,
@@ -94,9 +93,15 @@ def main() -> None:
         "fuel_level_entity": _env("FUEL_LEVEL_ENTITY"),
         "location_entity": _env("LOCATION_ENTITY"),
     })
+    # Pojazdy: cykl życia (0.8.0) — aktywny pojazd żyje w settings, nie jest
+    # już zamrożony na jednym id; startowa rozdzielczość tylko dla
+    # jednorazowego auto-importu CSV przy starcie (aplikacja jeszcze nie
+    # przyjmuje żądań, więc nie ma czego przełączać).
+    active_id = dbm.resolve_active_vehicle_id(
+        conn, int(settingsm.get_settings(conn).get("active_vehicle_id") or 0))
     conn.close()
 
-    auto_import_share(db_path, vehicle_id, share_dir, default_fuel)
+    auto_import_share(db_path, active_id, share_dir, default_fuel)
 
     mqtt_host = _env("MQTT_HOST", "core-mosquitto")
     mqtt_port = int(_env("MQTT_PORT", "1883") or 1883)
@@ -121,16 +126,32 @@ def main() -> None:
     )
     mqtt_pub.connect()
 
+    def _current_odometer(s: dict) -> int | None:
+        entity = s.get("odometer_entity")
+        if not entity:
+            return None
+        data = ha_client.get_state(entity)
+        try:
+            return int(float(data["state"])) if data else None
+        except (KeyError, TypeError, ValueError):
+            return None
+
     def publish_sensors() -> None:
         c = dbm.get_conn(db_path)
         try:
             s = settingsm.get_settings(c)
-            vehicle = dbm.get_vehicle(c, vehicle_id)
+            vid = dbm.resolve_active_vehicle_id(
+                c, int(s.get("active_vehicle_id") or 0))
+            vehicle = dbm.get_vehicle(c, vid)
             mqtt_pub.publish(queries.sensor_values(
-                c, vehicle_id, s["monthly_fuel_budget"],
+                c, vid, s["monthly_fuel_budget"],
                 fuel_type=vehicle["fuel_type"],
                 price_region=s["price_region"],
-                tank_capacity_l=vehicle["tank_capacity_l"]))
+                tank_capacity_l=vehicle["tank_capacity_l"],
+                lease_km_limit=vehicle["lease_km_limit"],
+                lease_start=vehicle["lease_start"],
+                lease_end=vehicle["lease_end"],
+                current_odometer=_current_odometer(s)))
         except Exception:
             logger.exception("Publikacja MQTT nieudana")
         finally:
@@ -158,17 +179,15 @@ def main() -> None:
 
     app = create_app(
         db_path=db_path,
-        vehicle_id=vehicle_id,
         config={
             # monthly_budget/default_fuel_type/odometer_entity/fuel_level_entity/
-            # location_entity/vehicle_name/price_region/tank_capacity_l żyją teraz
-            # w tabeli settings/vehicles (0.7.0) — web.py czyta je świeżo per
-            # request zamiast z tego zamrożonego dict-a.
+            # location_entity/vehicle_name/price_region/tank_capacity_l/aktywny
+            # pojazd żyją teraz w tabeli settings/vehicles (0.7.0/0.8.0) —
+            # web.py czyta je świeżo per request zamiast z tego zamrożonego dict-a.
             "drivvo_email": _env("DRIVVO_EMAIL"),
             "drivvo_password": _env("DRIVVO_PASSWORD"),
             "drivvo_vehicle_id": int(_env("DRIVVO_VEHICLE_ID", "0") or 0),
             "odo_budget_entity": _env("ODO_BUDGET_ENTITY"),
-            "lease_km_limit": int(_env("LEASE_KM_LIMIT", "0") or 0),
             "share_dir": share_dir,
         },
         on_data_change=publish_sensors,

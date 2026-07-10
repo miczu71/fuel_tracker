@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 
 from fuel_tracker import db as dbm, prices, queries
+from fuel_tracker import stats as st
 
 HTML = """
 <table><thead>
@@ -97,3 +98,34 @@ def test_sensor_values_no_region_data(conn):
     v = queries.sensor_values(conn, vid, 0.0, price_region="dolnośląskie")
     assert v["region_fuel_price"] is None
     assert v["price_vs_region"] is None
+
+
+def test_sensor_values_lease_margin_uses_provided_odometer(conn):
+    vid = dbm.ensure_vehicle(conn, "Testowy", 66.0, "PB95")
+    v = queries.sensor_values(
+        conn, vid, 0.0, now=datetime(2026, 7, 10),
+        lease_km_limit=90000, lease_start="2024-10-10", lease_end="2028-10-09",
+        current_odometer=50000)
+    assert v["lease_km_margin"] == st.lease_km_margin(
+        90000, "2024-10-10", "2028-10-09", 50000, datetime(2026, 7, 10))
+
+
+def test_sensor_values_lease_margin_falls_back_to_last_fillup_odometer(conn):
+    vid = dbm.ensure_vehicle(conn, "Testowy", 66.0, "PB95")
+    conn.execute(
+        "INSERT INTO fillups (vehicle_id, date, odometer, volume_l,"
+        " price_per_l, total_cost) VALUES (?, '2026-07-05 10:00', 48000,"
+        " 40, 6.0, 240.0)", (vid,))
+    conn.commit()
+    v = queries.sensor_values(
+        conn, vid, 0.0, now=datetime(2026, 7, 10),
+        lease_km_limit=90000, lease_start="2024-10-10", lease_end="2028-10-09")
+    assert v["lease_km_margin"] == st.lease_km_margin(
+        90000, "2024-10-10", "2028-10-09", 48000, datetime(2026, 7, 10))
+
+
+def test_sensor_values_lease_margin_none_without_lease_fields(conn):
+    vid = dbm.ensure_vehicle(conn, "Testowy", 66.0, "PB95")
+    v = queries.sensor_values(conn, vid, 0.0)
+    assert v["lease_km_margin"] is None
+    assert v["lease_depletion_date"] is None

@@ -48,9 +48,12 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
   region (wykres), przebieg miesięczny, podział kosztów
   (karta ORLEN Flota / prywatne / płyny / inne), rekordy, ranking stacji,
   raport miesięczny z eksportem CSV.
-- **Leasing** — zapas km z `sensor.odo_vs_budget` (opcja
-  `odo_budget_entity`) + prognoza daty wyczerpania limitu
-  (`lease_km_limit`) przy obecnym tempie przebiegu.
+- **Leasing per auto** — start/koniec leasingu, limit km i rata miesięczna
+  edytowalne przy każdym pojeździe (strona Ustawienia); add-on sam liczy
+  zapas km (ta sama krzywa co dawny `sensor.odo_vs_budget`) i prognozę daty
+  wyczerpania limitu przy obecnym tempie przebiegu — bez zależności od
+  szablonu HA. `sensor.odo_vs_budget`/`odo_budget_entity` zostają
+  tymczasowo do porównania, aż do osobnej decyzji o wycofaniu.
 - **Walidacja przebiegu** — odometr musi rosnąć w czasie względem sąsiednich
   wpisów (chyba że zaznaczono „Pominięto poprzednie tankowanie").
 - **Wydatki w kategoriach** — Serwis, Eksploatacja, Rejestracja, Parking,
@@ -74,6 +77,11 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
   działa od razu. Karta „Powiadomienia" pozwala włączać/wyłączać z Ustawień
   automatyzacje alertów zdefiniowane w HA (patrz „Integracja z HA") bez
   wchodzenia do Home Assistant.
+- **Pojazdy: cykl życia** — karta „Pojazdy" w Ustawieniach: dodawanie,
+  archiwizacja/przywracanie i przełączanie aktywnego pojazdu, wszystko bez
+  restartu add-onu. Sensory MQTT, pulpit i statystyki zawsze dotyczą
+  aktywnego pojazdu; historia zarchiwizowanego auta zostaje. Twarde
+  usunięcie działa tylko dla pojazdu bez tankowań/wydatków w historii.
 
 ## Encje (MQTT discovery)
 
@@ -106,6 +114,8 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 | `sensor.superb_fuel_ytd_fuel_cost` | PLN | Wydatki na paliwo od początku roku |
 | `sensor.superb_fuel_projected_annual_km` | km | Roczne tempo przebiegu (ekstrapolacja historii) |
 | `sensor.superb_fuel_best_station` | — | Stacja z najniższą średnią ceną (min. 2 tankowania) |
+| `sensor.superb_fuel_lease_km_margin` | km | Zapas km do limitu leasingu aktywnego pojazdu (ta sama krzywa co dawny `sensor.odo_vs_budget`) |
+| `sensor.superb_fuel_lease_depletion_date` | date | Prognoza daty wyczerpania limitu km przy obecnym tempie |
 
 > Rzeczywiste `entity_id` zależą od nazwy urządzenia — po pierwszym starcie
 > zweryfikuj je w **Narzędzia deweloperskie → Stany**.
@@ -237,23 +247,31 @@ powyższe sensory wystarczą jako dane wejściowe.
 > `monthly_fuel_budget`, `odometer_entity`, `fuel_level_entity`,
 > `location_entity` i `price_region` to teraz tylko **wartość startowa**
 > (seedowana do bazy przy pierwszym uruchomieniu) — edycja na żywo, bez
-> restartu add-onu, jest na stronie **Ustawienia** (karty Pojazd / Budżet /
+> restartu add-onu, jest na stronie **Ustawienia** (karty Pojazdy / Budżet /
 > Ceny regionalne / Encje HA). Zmiana tych opcji w Supervisorze po
 > pierwszym starcie nie ma już żadnego efektu — reszta opcji poniżej
 > zostaje techniczna (wymaga restartu).
+>
+> **Od 0.8.0:** wiele pojazdów żyje w bazie (karta „Pojazdy"), nie w
+> opcjach Supervisora — `vehicle_name`/`tank_capacity_l`/`default_fuel_type`
+> zasiewają tylko **pierwszy** pojazd przy pierwszym starcie. Leasing
+> (start/koniec/limit km/rata) jest teraz polem każdego pojazdu w UI —
+> opcja `lease_km_limit` **usunięta** (zastąpiona per-pojazdowym polem).
+> `odo_budget_entity` zostaje jako Supervisor-only ustawienie, używane
+> wyłącznie do wyświetlenia starego `sensor.odo_vs_budget` obok nowego
+> wyliczenia — do usunięcia po osobnej decyzji o wycofaniu szablonu.
 
 | Opcja | Domyślnie | Opis |
 |---|---|---|
-| `vehicle_name` | `Skoda Superb` | Nazwa pojazdu (i prefiks urządzenia MQTT) — wartość startowa, potem edycja w Ustawieniach |
-| `tank_capacity_l` | `66.0` | Pojemność baku [L] — wartość startowa, potem edycja w Ustawieniach |
-| `default_fuel_type` | `PB95` | Domyślny typ paliwa w formularzu — wartość startowa, potem edycja w Ustawieniach |
+| `vehicle_name` | `Skoda Superb` | Nazwa **pierwszego** pojazdu (kolejne dodaje się w Ustawieniach) — wartość startowa, potem edycja w Ustawieniach |
+| `tank_capacity_l` | `66.0` | Pojemność baku pierwszego pojazdu [L] — wartość startowa, potem edycja w Ustawieniach |
+| `default_fuel_type` | `PB95` | Domyślny typ paliwa pierwszego pojazdu — wartość startowa, potem edycja w Ustawieniach |
 | `monthly_fuel_budget` | `984.0` | Miesięczny budżet paliwowy [PLN] — wartość startowa, potem edycja w Ustawieniach |
 | `odometer_entity` | `sensor.skoda_superb_mileage` | Encja odometru do prefill formularza — wartość startowa, potem edycja w Ustawieniach |
 | `fuel_level_entity` | `sensor.skoda_superb_fuel_level` | Encja poziomu paliwa (nieużywana) — wartość startowa, potem edycja w Ustawieniach |
 | `location_entity` | `device_tracker.op12` | Encja z GPS telefonu do dopasowania stacji w formularzu — wartość startowa, potem edycja w Ustawieniach |
 | `price_region` | `dolnośląskie` | Województwo do cen regionalnych (autocentrum.pl) — wartość startowa, potem edycja w Ustawieniach |
-| `odo_budget_entity` | `sensor.odo_vs_budget` | Encja HA z zapasem km leasingu (strona Statystyki) |
-| `lease_km_limit` | `90000` | Limit km leasingu do prognozy wyczerpania (0 = wyłączone) |
+| `odo_budget_entity` | `sensor.odo_vs_budget` | Encja HA z zapasem km leasingu — tylko do porównania z nowym wyliczeniem per auto (strona Statystyki) |
 | `drivvo_email` / `drivvo_password` | — | Konto Drivvo do jednorazowego importu |
 | `drivvo_vehicle_id` | `0` | ID pojazdu w Drivvo (`0` = pierwszy z konta) |
 | `notify_service` | `notify/family` | Usługa powiadomień (nieużywana — alerty idą przez pakiet automatyzacji HA, patrz „Integracja z HA") |
@@ -274,11 +292,12 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 `GET /api/statistics` · `GET /api/report.csv` · `POST /api/import/csv` ·
 `POST /api/import/drivvo` · `GET /api/verify` · `GET /api/export/fuelio.csv` ·
 `GET|PUT /api/settings` · `POST /api/settings/toggle-automation` ·
-`GET|PUT /api/vehicles/<id>` · `GET /api/health`
+`GET /api/vehicles` · `POST /api/vehicles` · `GET|PUT|DELETE /api/vehicles/<id>` ·
+`POST /api/vehicles/<id>/activate` · `POST /api/vehicles/<id>/archive` ·
+`POST /api/vehicles/<id>/unarchive` · `GET /api/health`
 
 ## Plan rozwoju
 
-- **0.8.0** — pojazdy: cykl życia (dodawanie/archiwizacja) + leasing per auto.
 - **0.9.0** — backup/restore w UI + PWA.
 
 ## Rozwój

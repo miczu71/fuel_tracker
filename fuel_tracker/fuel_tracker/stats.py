@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 
@@ -179,6 +179,43 @@ def projected_annual_km(fillups: list[dict]) -> Optional[int]:
     if days < 30:  # za krótka historia na sensowną ekstrapolację
         return None
     return round((dated[-1]["odometer"] - dated[0]["odometer"]) / days * 365)
+
+
+# ── Leasing per auto (0.8.0) ──────────────────────────────────────────────
+
+def lease_km_margin(lease_km_limit: Optional[int], lease_start: Optional[str],
+                    lease_end: Optional[str], current_odometer: Optional[int],
+                    now: datetime) -> Optional[float]:
+    """Zapas km do limitu leasingu — ta sama krzywa co sensor.odo_vs_budget
+    (template.yaml): limit × (teraz-start)/(koniec-start) − przebieg."""
+    if not (lease_km_limit and lease_start and lease_end) \
+            or current_odometer is None:
+        return None
+    try:
+        start = datetime.fromisoformat(lease_start)
+        end = datetime.fromisoformat(lease_end)
+    except ValueError:
+        return None
+    span = (end - start).total_seconds()
+    if span <= 0:
+        return None
+    elapsed = (now - start).total_seconds()
+    return round(lease_km_limit * (elapsed / span) - current_odometer, 1)
+
+
+def lease_depletion_date(lease_km_limit: Optional[int],
+                         current_odometer: Optional[int],
+                         annual_km: Optional[int],
+                         now: datetime) -> Optional[str]:
+    """Prognoza daty wyczerpania limitu km przy obecnym tempie
+    (projected_annual_km)."""
+    if not lease_km_limit or current_odometer is None or not annual_km:
+        return None
+    remaining = lease_km_limit - current_odometer
+    if remaining <= 0:
+        return now.strftime("%Y-%m-%d")
+    days = remaining / annual_km * 365
+    return (now + timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 def station_ranking(fillups: list[dict]) -> list[dict]:

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.8.0
+
+- **Pojazdy: cykl życia** — nowa karta „Pojazdy" w Ustawieniach: dodawanie,
+  archiwizacja/przywracanie, przełączanie aktywnego pojazdu i twarde
+  usuwanie (tylko bez historii tankowań/wydatków) — wszystko bez restartu
+  add-onu. Aktywny pojazd żyje w `settings.active_vehicle_id` (migracja
+  #6 dodaje też `vehicles.archived/lease_start/lease_end/lease_km_limit/
+  monthly_rate`); sensory MQTT, pulpit i statystyki zawsze dotyczą
+  aktywnego pojazdu. Upgrade z instalacji jednopojazdowych jest
+  transparentny — bez skonfigurowanego `active_vehicle_id` add-on
+  automatycznie wybiera jedyny istniejący pojazd.
+- **Leasing per auto** — start/koniec leasingu, limit km i rata miesięczna
+  edytowalne przy każdym pojeździe. Add-on liczy zapas km samodzielnie
+  (`sensor.superb_fuel_lease_km_margin`) tą samą krzywą co dotychczasowy
+  szablon `sensor.odo_vs_budget`, plus prognozę wyczerpania limitu
+  (`sensor.superb_fuel_lease_depletion_date`) — przebieg z
+  `odometer_entity`, awaryjnie z ostatniego tankowania. Stary
+  `sensor.odo_vs_budget`/`odo_budget_entity` zostają tymczasowo w
+  odpowiedzi `/api/statistics` do porównania (±1 km) przed ewentualnym
+  wycofaniem szablonu — osobna decyzja, nie w tym wydaniu. Opcja
+  Supervisora `lease_km_limit` **usunięta** (zastąpiona per-pojazdowym polem).
+- Nowe endpointy: `GET/POST /api/vehicles`, `GET/PUT/DELETE
+  /api/vehicles/<id>` (rozszerzone na dowolny pojazd, nie tylko aktywny),
+  `POST /api/vehicles/<id>/activate|archive|unarchive`.
+- 35 nowych testów (`test_vehicles.py`, `test_vehicles_api.py`, rozszerzenia
+  `test_stats_extended.py`/`test_prices.py`) — cykl życia pojazdów
+  (archiwizacja/usuwanie z historią i bez), fallback aktywnego pojazdu
+  (nieskonfigurowany/zarchiwizowany/nieistniejący), matematyka leasingu
+  zweryfikowana wprost przeciw formule `sensor.odo_vs_budget`, przełączanie
+  aktywnego pojazdu bez restartu (144/144 zielone).
+
 ## 0.7.0
 
 - **Ustawienia edytowalne w UI, bez restartu add-onu** — nowa tabela

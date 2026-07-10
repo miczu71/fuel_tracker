@@ -5,11 +5,32 @@
 <div class="page-head"><h1>Ustawienia i import</h1></div>
 
 <div class="card">
-  <div class="card-title">Pojazd</div>
+  <div class="card-title">Pojazdy</div>
+  <p class="muted">Aktywny pojazd decyduje o sensorach MQTT, pulpicie i
+  statystykach. Usunięcie działa tylko dla pojazdu bez historii
+  tankowań/wydatków — w przeciwnym razie zarchiwizuj.</p>
+  <div id="vehicle-list"></div>
+  <form class="form" id="vehicle-add-form">
+    <label>Nazwa <input type="text" id="new-veh-name" required></label>
+    <label>Pojemność baku (L)
+      <input type="number" step="0.1" min="1" id="new-veh-tank" required></label>
+    <label>Domyślne paliwo <input type="text" id="new-veh-fuel" required></label>
+    <button type="submit" class="btn primary">Dodaj pojazd</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Aktywny pojazd</div>
   <form class="form" id="vehicle-form">
     <label>Nazwa <input type="text" id="veh-name" required></label>
     <label>Pojemność baku (L) <input type="number" step="0.1" min="1" id="veh-tank" required></label>
     <label>Domyślne paliwo <input type="text" id="veh-fuel" required></label>
+    <label>Początek leasingu <input type="date" id="veh-lease-start"></label>
+    <label>Koniec leasingu <input type="date" id="veh-lease-end"></label>
+    <label>Limit km leasingu
+      <input type="number" step="1" min="0" id="veh-lease-limit"></label>
+    <label>Rata miesięczna (PLN)
+      <input type="number" step="0.01" min="0" id="veh-lease-rate"></label>
     <button type="submit" class="btn primary">Zapisz</button>
   </form>
 </div>

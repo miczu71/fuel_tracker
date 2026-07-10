@@ -30,7 +30,7 @@ def client(tmp_path, calls):
         return {"ok": True}
 
     app = create_app(
-        db_path=db_path, vehicle_id=vid, config={},
+        db_path=db_path, config={},
         ha_state=ha_state, ha_call_service=ha_call_service)
     app.testing = True
     app.test_vehicle_id = vid

@@ -637,16 +637,97 @@ window.FT = (function () {
       document.getElementById("veh-name").value = v.name;
       document.getElementById("veh-tank").value = v.tank_capacity_l;
       document.getElementById("veh-fuel").value = v.fuel_type;
+      document.getElementById("veh-lease-start").value = v.lease_start || "";
+      document.getElementById("veh-lease-end").value = v.lease_end || "";
+      document.getElementById("veh-lease-limit").value = v.lease_km_limit ?? "";
+      document.getElementById("veh-lease-rate").value = v.monthly_rate ?? "";
     }
     loadVehicleForm();
     document.getElementById("vehicle-form").addEventListener(
       "submit", async (e) => {
         e.preventDefault();
+        const limit = document.getElementById("veh-lease-limit").value;
+        const rate = document.getElementById("veh-lease-rate").value;
         await sendJSON(`api/vehicles/${vehicleId}`, "PUT", {
           name: document.getElementById("veh-name").value.trim(),
           tank_capacity_l: parseFloat(document.getElementById("veh-tank").value),
           fuel_type: document.getElementById("veh-fuel").value.trim(),
+          lease_start: document.getElementById("veh-lease-start").value || null,
+          lease_end: document.getElementById("veh-lease-end").value || null,
+          lease_km_limit: limit ? parseInt(limit, 10) : null,
+          monthly_rate: rate ? parseFloat(rate) : null,
         });
+      });
+
+    const vehicleList = document.getElementById("vehicle-list");
+    async function loadVehicleList() {
+      const rows = await getJSON("api/vehicles");
+      vehicleList.innerHTML = `
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Nazwa</th><th>Stan</th><th>Leasing</th><th></th></tr></thead>
+          <tbody>${rows.map((v) => {
+            const badge = v.active ? '<span class="verify-ok">aktywny</span>'
+              : v.archived ? '<span class="muted">zarchiwizowany</span>' : "";
+            const lease = v.lease_km_limit
+              ? `${fmt(v.lease_km_limit, 0)} km${v.lease_end ? " do " + v.lease_end : ""}`
+              : "–";
+            const actions = [];
+            if (!v.active && !v.archived) actions.push(
+              `<button type="button" class="btn" data-activate="${v.id}">Ustaw aktywny</button>`);
+            if (!v.archived) actions.push(
+              `<button type="button" class="btn" data-archive="${v.id}">Archiwizuj</button>`);
+            else actions.push(
+              `<button type="button" class="btn" data-unarchive="${v.id}">Przywróć</button>`);
+            if (!v.active) actions.push(
+              `<button type="button" class="btn" data-delete="${v.id}">Usuń</button>`);
+            return `<tr>
+              <td>${v.name}</td><td>${badge}</td><td>${lease}</td>
+              <td>${actions.join(" ")}</td></tr>`;
+          }).join("")}</tbody>
+        </table></div>`;
+
+      vehicleList.querySelectorAll("[data-activate]").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          await fetch(`api/vehicles/${btn.dataset.activate}/activate`,
+                     { method: "POST" });
+          location.reload();
+        }));
+      vehicleList.querySelectorAll("[data-archive]").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          await fetch(`api/vehicles/${btn.dataset.archive}/archive`,
+                     { method: "POST" });
+          loadVehicleList();
+        }));
+      vehicleList.querySelectorAll("[data-unarchive]").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          await fetch(`api/vehicles/${btn.dataset.unarchive}/unarchive`,
+                     { method: "POST" });
+          loadVehicleList();
+        }));
+      vehicleList.querySelectorAll("[data-delete]").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          if (!confirm("Usunąć pojazd? Tej operacji nie można cofnąć."))
+            return;
+          const r = await fetch(`api/vehicles/${btn.dataset.delete}`,
+                                { method: "DELETE" });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) { alert(data.error || `HTTP ${r.status}`); return; }
+          loadVehicleList();
+        }));
+    }
+    loadVehicleList();
+
+    document.getElementById("vehicle-add-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        await sendJSON("api/vehicles", "POST", {
+          name: document.getElementById("new-veh-name").value.trim(),
+          tank_capacity_l:
+            parseFloat(document.getElementById("new-veh-tank").value),
+          fuel_type: document.getElementById("new-veh-fuel").value.trim(),
+        });
+        e.target.reset();
+        loadVehicleList();
       });
 
     const automationBox = document.getElementById("automation-rows");

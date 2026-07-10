@@ -1,5 +1,5 @@
 """Statystyki 0.4.0: zasięg, prognozy, rekordy, ranking stacji."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fuel_tracker import stats as st
 
@@ -75,3 +75,43 @@ def test_monthly_km():
     assert km == [{"month": "2026-02", "km": 700},
                   {"month": "2026-03", "km": 700},
                   {"month": "2026-04", "km": 700}]
+
+
+# ── Leasing per auto (0.8.0) ──────────────────────────────────────────────
+
+def test_lease_km_margin_matches_odo_vs_budget_formula():
+    """Ta sama krzywa co sensor.odo_vs_budget (template.yaml:632-643)."""
+    now = datetime(2026, 7, 10)
+    start = datetime(2024, 10, 10)
+    end = datetime(2028, 10, 9)
+    limit = 90000
+    odometer = 50000
+    expected = limit * ((now - start).total_seconds()
+                       / (end - start).total_seconds()) - odometer
+    result = st.lease_km_margin(limit, "2024-10-10", "2028-10-09", odometer, now)
+    assert result == round(expected, 1)
+
+
+def test_lease_km_margin_none_when_lease_fields_missing():
+    assert st.lease_km_margin(None, None, None, 1000, datetime(2026, 1, 1)) is None
+
+
+def test_lease_km_margin_none_when_odometer_missing():
+    assert st.lease_km_margin(
+        90000, "2024-10-10", "2028-10-09", None, datetime(2026, 1, 1)) is None
+
+
+def test_lease_depletion_date_none_without_annual_km():
+    assert st.lease_depletion_date(90000, 50000, None, datetime(2026, 1, 1)) is None
+
+
+def test_lease_depletion_date_projects_forward():
+    now = datetime(2026, 1, 1)
+    result = st.lease_depletion_date(90000, 80000, 20000, now)
+    expected = (now + timedelta(days=10000 / 20000 * 365)).strftime("%Y-%m-%d")
+    assert result == expected
+
+
+def test_lease_depletion_date_today_when_limit_already_exceeded():
+    now = datetime(2026, 1, 1)
+    assert st.lease_depletion_date(90000, 95000, 20000, now) == now.strftime("%Y-%m-%d")

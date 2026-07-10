@@ -141,6 +141,17 @@ _MIGRATIONS = [
         value TEXT
     );
     """,
+    # v6 — pojazdy: cykl życia + leasing per auto (0.8.0). Aktywny pojazd
+    # (settings.active_vehicle_id) wybiera, którego dotyczą sensory MQTT/
+    # pulpit/statystyki; archived=1 wyklucza z listy kandydatów na aktywny
+    # bez usuwania historii tankowań/wydatków.
+    """
+    ALTER TABLE vehicles ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE vehicles ADD COLUMN lease_start TEXT;
+    ALTER TABLE vehicles ADD COLUMN lease_end TEXT;
+    ALTER TABLE vehicles ADD COLUMN lease_km_limit INTEGER;
+    ALTER TABLE vehicles ADD COLUMN monthly_rate REAL;
+    """,
 ]
 
 
@@ -182,15 +193,17 @@ def ensure_vehicle(conn: sqlite3.Connection, name: str, tank_capacity_l: float,
     return cur.lastrowid
 
 
-def get_vehicle(conn: sqlite3.Connection, vehicle_id: int) -> dict:
+def get_vehicle(conn: sqlite3.Connection, vehicle_id: int) -> dict | None:
     row = conn.execute(
-        "SELECT id, name, tank_capacity_l, fuel_type FROM vehicles WHERE id = ?",
+        "SELECT id, name, tank_capacity_l, fuel_type, archived, lease_start, "
+        "lease_end, lease_km_limit, monthly_rate FROM vehicles WHERE id = ?",
         (vehicle_id,)).fetchone()
-    return dict(row)
+    return dict(row) if row else None
 
 
 def update_vehicle(conn: sqlite3.Connection, vehicle_id: int, fields: dict) -> bool:
-    allowed = {"name", "tank_capacity_l", "fuel_type"}
+    allowed = {"name", "tank_capacity_l", "fuel_type", "lease_start",
+               "lease_end", "lease_km_limit", "monthly_rate"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
@@ -200,6 +213,88 @@ def update_vehicle(conn: sqlite3.Connection, vehicle_id: int, fields: dict) -> b
         (*updates.values(), vehicle_id))
     conn.commit()
     return cur.rowcount > 0
+
+
+def create_vehicle(conn: sqlite3.Connection, name: str, tank_capacity_l: float,
+                   fuel_type: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO vehicles (name, tank_capacity_l, fuel_type) VALUES (?, ?, ?)",
+        (name, tank_capacity_l, fuel_type))
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_vehicles(conn: sqlite3.Connection,
+                  include_archived: bool = False) -> list[dict]:
+    q = ("SELECT id, name, tank_capacity_l, fuel_type, archived, lease_start, "
+        "lease_end, lease_km_limit, monthly_rate FROM vehicles")
+    if not include_archived:
+        q += " WHERE archived = 0"
+    q += " ORDER BY id"
+    return [dict(r) for r in conn.execute(q).fetchall()]
+
+
+def resolve_active_vehicle_id(conn: sqlite3.Connection,
+                              configured_id: int) -> int | None:
+    """Aktywny pojazd: skonfigurowany w settings, jeśli istnieje i nie jest
+    zarchiwizowany; w przeciwnym razie pierwszy nie-zarchiwizowany pojazd."""
+    if configured_id:
+        row = conn.execute(
+            "SELECT id FROM vehicles WHERE id = ? AND archived = 0",
+            (configured_id,)).fetchone()
+        if row:
+            return row["id"]
+    row = conn.execute(
+        "SELECT id FROM vehicles WHERE archived = 0 ORDER BY id LIMIT 1"
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def archive_vehicle(conn: sqlite3.Connection, vehicle_id: int) -> bool:
+    """Odmawia, gdyby to był ostatni pozostały aktywny pojazd (musi zostać
+    co najmniej jeden kandydat na aktywny)."""
+    remaining = conn.execute(
+        "SELECT COUNT(*) AS n FROM vehicles WHERE archived = 0 AND id != ?",
+        (vehicle_id,)).fetchone()["n"]
+    if remaining == 0:
+        return False
+    cur = conn.execute(
+        "UPDATE vehicles SET archived = 1 WHERE id = ?", (vehicle_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def unarchive_vehicle(conn: sqlite3.Connection, vehicle_id: int) -> bool:
+    cur = conn.execute(
+        "UPDATE vehicles SET archived = 0 WHERE id = ?", (vehicle_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def can_delete_vehicle(conn: sqlite3.Connection,
+                       vehicle_id: int) -> tuple[bool, str | None]:
+    total = conn.execute("SELECT COUNT(*) AS n FROM vehicles").fetchone()["n"]
+    if total <= 1:
+        return False, "Nie można usunąć jedynego pojazdu"
+    has_history = (
+        conn.execute("SELECT 1 FROM fillups WHERE vehicle_id = ? LIMIT 1",
+                     (vehicle_id,)).fetchone()
+        or conn.execute("SELECT 1 FROM expenses WHERE vehicle_id = ? LIMIT 1",
+                        (vehicle_id,)).fetchone())
+    if has_history:
+        return False, ("Pojazd ma historię tankowań/wydatków — "
+                       "zarchiwizuj zamiast usuwać")
+    return True, None
+
+
+def delete_vehicle(conn: sqlite3.Connection,
+                   vehicle_id: int) -> tuple[bool, str | None]:
+    ok, reason = can_delete_vehicle(conn, vehicle_id)
+    if not ok:
+        return False, reason
+    conn.execute("DELETE FROM vehicles WHERE id = ?", (vehicle_id,))
+    conn.commit()
+    return True, None
 
 
 def category_id(conn: sqlite3.Connection, name: str | None) -> int:

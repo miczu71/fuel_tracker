@@ -16,12 +16,12 @@ def client(tmp_path):
     db_path = str(tmp_path / "web.db")
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
-    vid = dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
+    dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
     settingsm.set_settings(c, {"monthly_fuel_budget": 984.0,
                                "odometer_entity": "sensor.odo"})
     c.close()
     app = create_app(
-        db_path=db_path, vehicle_id=vid, config={},
+        db_path=db_path, config={},
         ha_state=lambda e: {"state": "31468"},
     )
     app.testing = True
@@ -173,7 +173,7 @@ def test_prefill_matches_station_by_gps(tmp_path):
     db_path = str(tmp_path / "gps.db")
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
-    vid = dbm.ensure_vehicle(c, "T", 66.0, "PB95")
+    dbm.ensure_vehicle(c, "T", 66.0, "PB95")
     c.execute("INSERT INTO stations (name, latitude, longitude) "
               "VALUES ('Orlen Legnicka', 51.1152, 16.9812)")
     settingsm.set_settings(c, {"odometer_entity": "sensor.odo",
@@ -188,7 +188,7 @@ def test_prefill_matches_station_by_gps(tmp_path):
         return {"state": "31468"}
 
     app = create_app(
-        db_path=db_path, vehicle_id=vid, config={}, ha_state=ha_state)
+        db_path=db_path, config={}, ha_state=ha_state)
     app.testing = True
     pre = app.test_client().get("/api/prefill").get_json()
     assert pre["station"] == "Orlen Legnicka"

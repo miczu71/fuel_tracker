@@ -18,10 +18,10 @@ def client(tmp_path):
     db_path = str(tmp_path / "web.db")
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
-    vid = dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
+    dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
     c.close()
     app = create_app(
-        db_path=db_path, vehicle_id=vid,
+        db_path=db_path,
         config={"monthly_budget": 0.0, "default_fuel_type": "PB95",
                 "vehicle_name": "Testowy"})
     app.testing = True

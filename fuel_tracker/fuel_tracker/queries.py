@@ -40,7 +40,11 @@ def _iso_local(date_str: str) -> str | None:
 def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
                   monthly_budget: float, now: datetime | None = None,
                   fuel_type: str = "PB95", price_region: str | None = None,
-                  tank_capacity_l: float = 0.0) -> dict:
+                  tank_capacity_l: float = 0.0,
+                  lease_km_limit: int | None = None,
+                  lease_start: str | None = None,
+                  lease_end: str | None = None,
+                  current_odometer: int | None = None) -> dict:
     """Wartości dla publishera MQTT (slugi z publisher._SENSORS)."""
     fillups = fetch_fillups(conn, vehicle_id)
     expenses = fetch_expenses(conn, vehicle_id)
@@ -74,6 +78,14 @@ def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
         "projected_annual_km": st.projected_annual_km(fillups),
         "best_station": st.best_station(fillups),
     }
+    # Leasing per auto (0.8.0) — przebieg z odometer_entity (parametr
+    # current_odometer), awaryjnie z ostatniego tankowania.
+    odometer = current_odometer if current_odometer is not None else (
+        s.last_fillup["odometer"] if s.last_fillup else None)
+    values["lease_km_margin"] = st.lease_km_margin(
+        lease_km_limit, lease_start, lease_end, odometer, now)
+    values["lease_depletion_date"] = st.lease_depletion_date(
+        lease_km_limit, odometer, values["projected_annual_km"], now)
     if price_region:
         region = pr.latest_price(conn, price_region, fuel_type)
         values["region_fuel_price"] = region["price"] if region else None

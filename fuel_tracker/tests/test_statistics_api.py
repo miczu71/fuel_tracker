@@ -12,12 +12,12 @@ def client(tmp_path):
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
     vid = dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
+    dbm.update_vehicle(c, vid, {"lease_km_limit": 90000})
     settingsm.set_settings(c, {"price_region": "dolnośląskie"})
     c.close()
     app = create_app(
-        db_path=db_path, vehicle_id=vid,
-        config={"lease_km_limit": 90000,
-                "odo_budget_entity": "sensor.odo_vs_budget"},
+        db_path=db_path,
+        config={"odo_budget_entity": "sensor.odo_vs_budget"},
         ha_state=lambda e: {"state": "7672"}
                  if e == "sensor.odo_vs_budget" else None)
     app.testing = True

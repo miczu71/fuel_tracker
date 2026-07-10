@@ -60,6 +60,9 @@ _SENSORS: list[_Sensor] = [
     _Sensor("ytd_fuel_cost",        "YTD Fuel Cost",        "PLN",      "monetary", "total",            "mdi:calendar-range"),
     _Sensor("projected_annual_km",  "Projected Annual Km",  "km",       "distance", "measurement",      "mdi:speedometer"),
     _Sensor("best_station",         "Best Station",         None,       None,       None,               "mdi:trophy"),
+    # 0.8.0 — leasing per auto (aktywny pojazd)
+    _Sensor("lease_km_margin",      "Lease Km Margin",      "km",       "distance", "measurement",      "mdi:car-clock"),
+    _Sensor("lease_depletion_date", "Lease Depletion Date", None,       "date",     None,               "mdi:calendar-alert"),
 ]
 
 

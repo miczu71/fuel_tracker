@@ -6,7 +6,7 @@ import io
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -36,7 +36,7 @@ _ALERT_AUTOMATION_KEYS = (
 )
 
 
-def create_app(db_path: str, vehicle_id: int, config: dict,
+def create_app(db_path: str, config: dict,
                on_data_change: Optional[Callable[[], None]] = None,
                ha_state: Optional[Callable[[str], dict | None]] = None,
                ha_call_service: Optional[
@@ -87,8 +87,21 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     def live_settings() -> dict:
         return settingsm.get_settings(conn())
 
+    def current_vehicle_id() -> int:
+        configured = int(live_settings().get("active_vehicle_id") or 0)
+        return dbm.resolve_active_vehicle_id(conn(), configured)
+
     def live_vehicle() -> dict:
-        return dbm.get_vehicle(conn(), vehicle_id)
+        return dbm.get_vehicle(conn(), current_vehicle_id())
+
+    def _odometer_from_ha(s: dict) -> int | None:
+        if not (ha_state and s["odometer_entity"]):
+            return None
+        data = ha_state(s["odometer_entity"])
+        try:
+            return int(float(data["state"])) if data else None
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def base() -> str:
         return request.headers.get("X-Ingress-Path", "")
@@ -131,7 +144,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     def page_settings():
         return render_template("settings.html", base=base(),
                                vehicle=live_vehicle()["name"],
-                               vehicle_id=vehicle_id)
+                               vehicle_id=current_vehicle_id())
 
     # ── API: ustawienia / pojazd (0.7.0, edycja bez restartu) ──────────────
 
@@ -156,19 +169,77 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         changed()
         return jsonify({"ok": True})
 
+    # ── API: pojazdy (0.8.0, cykl życia + leasing per auto) ────────────────
+
+    @app.get("/api/vehicles")
+    def api_vehicles_list():
+        active_id = current_vehicle_id()
+        rows = dbm.list_vehicles(conn(), include_archived=True)
+        for r in rows:
+            r["active"] = r["id"] == active_id
+        return jsonify(rows)
+
+    @app.post("/api/vehicles")
+    def api_vehicle_create():
+        data = request.get_json(force=True)
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Wymagana nazwa"}), 400
+        new_id = dbm.create_vehicle(
+            conn(), name, float(data.get("tank_capacity_l") or 0),
+            data.get("fuel_type") or "PB95")
+        changed()
+        return jsonify({"id": new_id}), 201
+
     @app.get("/api/vehicles/<int:vid>")
     def api_vehicle_get(vid: int):
-        if vid != vehicle_id:
+        v = dbm.get_vehicle(conn(), vid)
+        if not v:
             return jsonify({"error": "not found"}), 404
-        return jsonify(live_vehicle())
+        return jsonify(v)
 
     @app.put("/api/vehicles/<int:vid>")
     def api_vehicle_update(vid: int):
-        if vid != vehicle_id:
+        if not dbm.get_vehicle(conn(), vid):
             return jsonify({"error": "not found"}), 404
         data = request.get_json(force=True)
         if not dbm.update_vehicle(conn(), vid, data):
             return jsonify({"error": "Brak poprawnych pól"}), 400
+        changed()
+        return jsonify({"ok": True})
+
+    @app.delete("/api/vehicles/<int:vid>")
+    def api_vehicle_delete(vid: int):
+        ok, reason = dbm.delete_vehicle(conn(), vid)
+        if not ok:
+            return jsonify({"error": reason}), 409
+        changed()
+        return jsonify({"ok": True})
+
+    @app.post("/api/vehicles/<int:vid>/activate")
+    def api_vehicle_activate(vid: int):
+        v = dbm.get_vehicle(conn(), vid)
+        if not v:
+            return jsonify({"error": "not found"}), 404
+        if v["archived"]:
+            return jsonify({"error":
+                            "Pojazd zarchiwizowany — najpierw przywróć"}), 400
+        settingsm.set_settings(conn(), {"active_vehicle_id": vid})
+        changed()
+        return jsonify({"ok": True})
+
+    @app.post("/api/vehicles/<int:vid>/archive")
+    def api_vehicle_archive(vid: int):
+        if not dbm.archive_vehicle(conn(), vid):
+            return jsonify({"error":
+                            "Nie można zarchiwizować jedynego pojazdu"}), 400
+        changed()
+        return jsonify({"ok": True})
+
+    @app.post("/api/vehicles/<int:vid>/unarchive")
+    def api_vehicle_unarchive(vid: int):
+        if not dbm.unarchive_vehicle(conn(), vid):
+            return jsonify({"error": "not found"}), 404
         changed()
         return jsonify({"ok": True})
 
@@ -194,14 +265,14 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
 
     @app.get("/api/summary")
     def api_summary():
-        return jsonify(queries.summary(conn(), vehicle_id,
+        return jsonify(queries.summary(conn(), current_vehicle_id(),
                                        live_settings()["monthly_fuel_budget"]))
 
     # ── API: tankowania ───────────────────────────────────────────────────
 
     @app.get("/api/fillups")
     def api_fillups():
-        rows = queries.fetch_fillups(conn(), vehicle_id, include_drafts=True)
+        rows = queries.fetch_fillups(conn(), current_vehicle_id(), include_drafts=True)
         cons = st.segment_consumption_by_fillup(
             [r for r in rows if not r["draft"]])
         attachments = _attachment_map("fillup_id")
@@ -214,7 +285,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     def api_fillup_get(fid: int):
         row = conn().execute(
             "SELECT * FROM fillups WHERE id = ? AND vehicle_id = ?",
-            (fid, vehicle_id)).fetchone()
+            (fid, current_vehicle_id())).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         return jsonify(dict(row))
@@ -266,7 +337,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         """
         if f["missed_previous"]:
             return None
-        params = [vehicle_id, exclude_id or -1, f["date"]]
+        params = [current_vehicle_id(), exclude_id or -1, f["date"]]
         prev = conn().execute(
             "SELECT odometer FROM fillups WHERE vehicle_id = ? AND draft = 0 "
             "AND id != ? AND date < ? ORDER BY date DESC LIMIT 1",
@@ -329,7 +400,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
                    currency, price_per_l_orig, total_cost_orig, exchange_rate,
                    source)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'manual')""",
-                (vehicle_id, f["date"], f["odometer"], f["volume_l"],
+                (current_vehicle_id(), f["date"], f["odometer"], f["volume_l"],
                  f["price_per_l"], f["total_cost"], f["full_tank"],
                  f["missed_previous"], f["fuel_type"], f["station"], f["notes"],
                  f["paid_by"], f["latitude"], f["longitude"],
@@ -362,7 +433,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
              f["fuel_type"], f["station"], f["notes"], f["paid_by"],
              f["latitude"], f["longitude"], f["currency"],
              f["price_per_l_orig"], f["total_cost_orig"], f["exchange_rate"],
-             fid, vehicle_id))
+             fid, current_vehicle_id()))
         conn().commit()
         if not cur.rowcount:
             return jsonify({"error": "not found"}), 404
@@ -375,7 +446,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     def api_fillup_delete(fid: int):
         cur = conn().execute(
             "DELETE FROM fillups WHERE id = ? AND vehicle_id = ?",
-            (fid, vehicle_id))
+            (fid, current_vehicle_id()))
         conn().commit()
         if not cur.rowcount:
             return jsonify({"error": "not found"}), 404
@@ -386,17 +457,11 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     def api_prefill():
         """Prefill formularza: odometr z myskoda, ostatnia stacja i cena."""
         s = live_settings()
-        odometer = None
-        if ha_state and s["odometer_entity"]:
-            data = ha_state(s["odometer_entity"])
-            try:
-                odometer = int(float(data["state"])) if data else None
-            except (KeyError, TypeError, ValueError):
-                odometer = None
+        odometer = _odometer_from_ha(s)
         last = conn().execute(
             "SELECT station, price_per_l FROM fillups WHERE vehicle_id = ? "
             "AND draft = 0 ORDER BY odometer DESC LIMIT 1",
-            (vehicle_id,)).fetchone()
+            (current_vehicle_id(),)).fetchone()
         # Pozycja telefonu (location_entity) → dopasowanie zapisanej stacji.
         lat = lon = matched = None
         if ha_state and s["location_entity"]:
@@ -451,13 +516,13 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
 
     @app.get("/api/map-data")
     def api_map_data():
-        return jsonify(stn.map_data(conn(), vehicle_id))
+        return jsonify(stn.map_data(conn(), current_vehicle_id()))
 
     # ── API: wydatki ──────────────────────────────────────────────────────
 
     @app.get("/api/expenses")
     def api_expenses():
-        rows = queries.fetch_expenses(conn(), vehicle_id)
+        rows = queries.fetch_expenses(conn(), current_vehicle_id())
         attachments = _attachment_map("expense_id")
         for r in rows:
             r["attachment_id"] = attachments.get(r["id"])
@@ -491,7 +556,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         cur = conn().execute(
             """INSERT INTO expenses (vehicle_id, date, odometer, category_id,
                description, cost, source) VALUES (?,?,?,?,?,?,'manual')""",
-            (vehicle_id, date, int(data.get("odometer") or 0) or None,
+            (current_vehicle_id(), date, int(data.get("odometer") or 0) or None,
              int(data.get("category_id") or 0) or dbm.category_id(conn(), None),
              (data.get("description") or "").strip() or None, cost))
         conn().commit()
@@ -512,7 +577,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             (date, int(data.get("odometer") or 0) or None,
              int(data.get("category_id") or 0) or dbm.category_id(conn(), None),
              (data.get("description") or "").strip() or None, cost,
-             eid, vehicle_id))
+             eid, current_vehicle_id()))
         conn().commit()
         if not cur.rowcount:
             return jsonify({"error": "not found"}), 404
@@ -523,7 +588,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     def api_expense_delete(eid: int):
         cur = conn().execute(
             "DELETE FROM expenses WHERE id = ? AND vehicle_id = ?",
-            (eid, vehicle_id))
+            (eid, current_vehicle_id()))
         conn().commit()
         if not cur.rowcount:
             return jsonify({"error": "not found"}), 404
@@ -582,7 +647,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             return jsonify({"error": "Brak pliku"}), 400
         text = file.read().decode("utf-8-sig", errors="replace")
         report = csv_fuelio.import_into(
-            conn(), vehicle_id, text, live_vehicle()["fuel_type"])
+            conn(), current_vehicle_id(), text, live_vehicle()["fuel_type"])
         changed()
         return jsonify(report.as_dict())
 
@@ -598,7 +663,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
                                      "drivvo_email/drivvo_password w opcjach add-onu"}), 400
         try:
             result = importer_drivvo.run_import(
-                conn(), vehicle_id, email, password,
+                conn(), current_vehicle_id(), email, password,
                 int(body.get("vehicle_id") or config.get("drivvo_vehicle_id", 0) or 0),
                 live_vehicle()["fuel_type"],
                 include_refuellings=bool(body.get("include_refuellings")))
@@ -613,7 +678,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     @app.get("/api/verify")
     def api_verify():
         """Bramka migracji: sumy w bazie vs żywe sensory Drivvo w HA."""
-        fillups = queries.fetch_fillups(conn(), vehicle_id)
+        fillups = queries.fetch_fillups(conn(), current_vehicle_id())
         s = st.compute_stats(fillups)
         local = {"count": s.fillup_count, "cost": s.total_cost,
                  "volume": s.total_volume_l}
@@ -648,22 +713,28 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
 
     @app.get("/api/statistics")
     def api_statistics():
-        fillups = queries.fetch_fillups(conn(), vehicle_id)
-        expenses = queries.fetch_expenses(conn(), vehicle_id)
+        fillups = queries.fetch_fillups(conn(), current_vehicle_id())
+        expenses = queries.fetch_expenses(conn(), current_vehicle_id())
         vehicle = live_vehicle()
-        region = live_settings()["price_region"]
+        settings_now = live_settings()
+        region = settings_now["price_region"]
         fuel_type = vehicle["fuel_type"]
         s = st.compute_stats(fillups)
 
-        # Leasing: zapas km z HA (odo_vs_budget) + prognoza wyczerpania limitu.
+        # Leasing per auto (0.8.0): przebieg z odometer_entity, awaryjnie z
+        # ostatniego tankowania — ta sama krzywa co sensor.odo_vs_budget
+        # (zewnętrzny, zostaje niżej do porównania przed ewentualnym
+        # wycofaniem template'a).
         annual_km = st.projected_annual_km(fillups)
-        odo_now = s.last_fillup["odometer"] if s.last_fillup else None
-        lease_limit = int(config.get("lease_km_limit") or 0)
-        depletion = None
-        if annual_km and odo_now and lease_limit > odo_now:
-            days = (lease_limit - odo_now) / annual_km * 365
-            depletion = (datetime.now() + timedelta(days=days)) \
-                .strftime("%Y-%m-%d")
+        odo_now = _odometer_from_ha(settings_now)
+        if odo_now is None:
+            odo_now = s.last_fillup["odometer"] if s.last_fillup else None
+        now = datetime.now()
+        lease_margin = st.lease_km_margin(
+            vehicle["lease_km_limit"], vehicle["lease_start"],
+            vehicle["lease_end"], odo_now, now)
+        depletion = st.lease_depletion_date(
+            vehicle["lease_km_limit"], odo_now, annual_km, now)
 
         return jsonify({
             "records": st.record_entries(fillups),
@@ -694,7 +765,8 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
                 "odo_vs_budget": _ha_float("odo_budget_entity"),
                 "projected_annual_km": annual_km,
                 "current_odometer": odo_now,
-                "km_limit": lease_limit or None,
+                "km_limit": vehicle["lease_km_limit"],
+                "lease_km_margin": lease_margin,
                 "limit_depletion_date": depletion,
             },
             "estimated_range_km": st.estimated_range_km(
@@ -703,8 +775,8 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
 
     @app.get("/api/report.csv")
     def api_report_csv():
-        fillups = queries.fetch_fillups(conn(), vehicle_id)
-        expenses = queries.fetch_expenses(conn(), vehicle_id)
+        fillups = queries.fetch_fillups(conn(), current_vehicle_id())
+        expenses = queries.fetch_expenses(conn(), current_vehicle_id())
         year = request.args.get("year")
         rows = st.monthly_report(fillups, expenses)
         if year:
@@ -723,7 +795,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
 
     @app.get("/api/export/fuelio.csv")
     def api_export():
-        data = csv_fuelio.export_csv(conn(), vehicle_id)
+        data = csv_fuelio.export_csv(conn(), current_vehicle_id())
         return Response(
             data, mimetype="text/csv",
             headers={"Content-Disposition":

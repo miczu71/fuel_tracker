@@ -18,6 +18,7 @@ SETTINGS_TYPES: dict[str, type] = {
     "alert_budget_automation": str,
     "alert_cheap_fuel_automation": str,
     "alert_lease_automation": str,
+    "active_vehicle_id": int,
 }
 
 DEFAULTS: dict[str, object] = {
@@ -30,6 +31,7 @@ DEFAULTS: dict[str, object] = {
     "alert_budget_automation": "",
     "alert_cheap_fuel_automation": "",
     "alert_lease_automation": "",
+    "active_vehicle_id": 0,
 }
 
 
