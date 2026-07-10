@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0
+
+- **Ustawienia edytowalne w UI, bez restartu add-onu** — nowa tabela
+  `settings` (migracja #5) zastępuje część opcji Supervisora jako źródło
+  prawdy: budżet miesięczny, domyślna waluta (nowość, nie istniała jako
+  opcja Supervisora), region cen, encje HA (odometr/poziom paliwa/
+  lokalizacja). Opcje w Supervisorze zostają jako **wartość startowa** —
+  seedowane do bazy jednorazowo przy pierwszym uruchomieniu
+  (`INSERT OR IGNORE`), potem baza ma pierwszeństwo; zmiana opcji w
+  Supervisorze po pierwszym starcie nie ma już efektu.
+- **Dane pojazdu edytowalne w UI** — nazwa, pojemność baku i domyślne
+  paliwo to teraz kolumny tabeli `vehicles` (istniały od v1, dotąd
+  zapisywane raz i nigdy nieodczytywane) edytowalne na karcie „Pojazd";
+  publikacja MQTT i strona Statystyki czytają je świeżo przy każdym ticku.
+- **Toggle automatyzacji alertów z poziomu add-onu** — karta
+  „Powiadomienia" w Ustawieniach: wklej entity_id automatyzacji z pakietu
+  YAML (0.6.0), a add-on pokaże jej stan i pozwoli włączyć/wyłączyć przez
+  `automation.turn_on`/`turn_off` (HA API) — bez wchodzenia do Home
+  Assistant. Progi i treść powiadomień nadal edytuje się wyłącznie w YAML;
+  add-on nie wysyła własnych powiadomień (`notify_service` pozostaje
+  nieużywany, jak dotychczas).
+- Nowe endpointy: `GET/PUT /api/settings`, `POST
+  /api/settings/toggle-automation`, `GET/PUT /api/vehicles/<id>`.
+- 20 nowych testów (`test_settings.py`, `test_settings_api.py`) — precedencja
+  seed/baza, roundtrip typowanych ustawień, efekt natychmiastowy bez
+  restartu, toggle automatyzacji (sukces/brak konfiguracji/błąd HA).
+
 ## 0.6.0
 
 - **Integracja z HA** — nowa sekcja README „Integracja z HA" z gotowym

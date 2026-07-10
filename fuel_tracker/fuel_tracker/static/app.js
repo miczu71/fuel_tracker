@@ -625,7 +625,115 @@ window.FT = (function () {
   }
 
   // ── Ustawienia / import ─────────────────────────────────────────────────
-  function initSettings() {
+  const ALERT_AUTOMATION_LABELS = {
+    alert_budget_automation: "Alert budżetu",
+    alert_cheap_fuel_automation: "Tanie paliwo w regionie",
+    alert_lease_automation: "Zapas km leasingu",
+  };
+
+  function initSettings(vehicleId) {
+    async function loadVehicleForm() {
+      const v = await getJSON(`api/vehicles/${vehicleId}`);
+      document.getElementById("veh-name").value = v.name;
+      document.getElementById("veh-tank").value = v.tank_capacity_l;
+      document.getElementById("veh-fuel").value = v.fuel_type;
+    }
+    loadVehicleForm();
+    document.getElementById("vehicle-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        await sendJSON(`api/vehicles/${vehicleId}`, "PUT", {
+          name: document.getElementById("veh-name").value.trim(),
+          tank_capacity_l: parseFloat(document.getElementById("veh-tank").value),
+          fuel_type: document.getElementById("veh-fuel").value.trim(),
+        });
+      });
+
+    const automationBox = document.getElementById("automation-rows");
+    function renderAutomationRows(s) {
+      automationBox.innerHTML = Object.entries(ALERT_AUTOMATION_LABELS)
+        .map(([key, label]) => {
+          const entity = s[key] || "";
+          const state = s[`${key}_state`];
+          const stateLabel = !entity ? "" :
+            state === null ? '<span class="muted">brak encji</span>' :
+            state === "on" ? '<span class="verify-ok">włączona</span>' :
+                            '<span class="muted">wyłączona</span>';
+          const toggleBtn = entity ? `
+            <button type="button" class="btn" data-toggle="${key}"
+                    data-turn-on="${state !== "on"}">
+              ${state === "on" ? "Wyłącz" : "Włącz"}
+            </button>` : "";
+          return `
+            <div class="automation-row">
+              <label>${label}
+                <input type="text" data-automation="${key}" value="${entity}"
+                       placeholder="automation....">
+              </label>
+              ${stateLabel} ${toggleBtn}
+            </div>`;
+        }).join("");
+
+      automationBox.querySelectorAll("[data-automation]").forEach((input) => {
+        input.addEventListener("change", async () => {
+          await sendJSON("api/settings", "PUT",
+            { [input.dataset.automation]: input.value.trim() });
+          renderAutomationRows(await getJSON("api/settings"));
+        });
+      });
+      automationBox.querySelectorAll("[data-toggle]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await sendJSON("api/settings/toggle-automation", "POST", {
+            key: btn.dataset.toggle,
+            turn_on: btn.dataset.turnOn === "true",
+          });
+          renderAutomationRows(await getJSON("api/settings"));
+        });
+      });
+    }
+
+    async function loadSettingsForms() {
+      const s = await getJSON("api/settings");
+      document.getElementById("set-budget").value = s.monthly_fuel_budget;
+      document.getElementById("set-currency").value = s.default_currency;
+      document.getElementById("set-region").value = s.price_region;
+      document.getElementById("set-odometer").value = s.odometer_entity;
+      document.getElementById("set-fuel-level").value = s.fuel_level_entity;
+      document.getElementById("set-location").value = s.location_entity;
+      renderAutomationRows(s);
+    }
+    loadSettingsForms();
+
+    document.getElementById("budget-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        await sendJSON("api/settings", "PUT", {
+          monthly_fuel_budget:
+            parseFloat(document.getElementById("set-budget").value),
+          default_currency:
+            document.getElementById("set-currency").value.trim().toUpperCase(),
+        });
+      });
+
+    document.getElementById("region-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        await sendJSON("api/settings", "PUT", {
+          price_region: document.getElementById("set-region").value.trim(),
+        });
+      });
+
+    document.getElementById("entities-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        await sendJSON("api/settings", "PUT", {
+          odometer_entity: document.getElementById("set-odometer").value.trim(),
+          fuel_level_entity:
+            document.getElementById("set-fuel-level").value.trim(),
+          location_entity: document.getElementById("set-location").value.trim(),
+        });
+      });
+
     const csvForm = document.getElementById("csv-form");
     csvForm.addEventListener("submit", async (e) => {
       e.preventDefault();

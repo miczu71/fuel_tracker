@@ -5,6 +5,59 @@
 <div class="page-head"><h1>Ustawienia i import</h1></div>
 
 <div class="card">
+  <div class="card-title">Pojazd</div>
+  <form class="form" id="vehicle-form">
+    <label>Nazwa <input type="text" id="veh-name" required></label>
+    <label>Pojemność baku (L) <input type="number" step="0.1" min="1" id="veh-tank" required></label>
+    <label>Domyślne paliwo <input type="text" id="veh-fuel" required></label>
+    <button type="submit" class="btn primary">Zapisz</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Budżet</div>
+  <form class="form" id="budget-form">
+    <label>Miesięczny budżet paliwowy (PLN)
+      <input type="number" step="0.01" min="0" id="set-budget" required></label>
+    <label>Domyślna waluta tankowań
+      <input type="text" id="set-currency" maxlength="3" required></label>
+    <button type="submit" class="btn primary">Zapisz</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Ceny regionalne</div>
+  <p class="muted">Województwo do porównania cen (scraper autocentrum.pl,
+  odświeżanie co 6 h).</p>
+  <form class="form" id="region-form">
+    <label>Region <input type="text" id="set-region" required></label>
+    <button type="submit" class="btn primary">Zapisz</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Powiadomienia</div>
+  <p class="muted">Progi i treść alertów (budżet, tanie paliwo, tempo
+  leasingu) edytuje się w pakiecie automatyzacji HA — patrz README
+  „Integracja z HA". Tutaj można podpiąć encję automatyzacji, żeby
+  włączać/wyłączać dany alert bez wchodzenia do Home Assistant.</p>
+  <div id="automation-rows"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Encje Home Assistant</div>
+  <form class="form" id="entities-form">
+    <label>Odometr (prefill formularza)
+      <input type="text" id="set-odometer" placeholder="sensor...."></label>
+    <label>Poziom paliwa
+      <input type="text" id="set-fuel-level" placeholder="sensor...."></label>
+    <label>Lokalizacja telefonu (dopasowanie stacji)
+      <input type="text" id="set-location" placeholder="device_tracker...."></label>
+    <button type="submit" class="btn primary">Zapisz</button>
+  </form>
+</div>
+
+<div class="card">
   <div class="card-title">Import z Fuelio CSV</div>
   <p class="muted">Wgraj plik eksportu z aplikacji Fuelio (sekcje „## Vehicle" /
   „## Log"). Import jest idempotentny — ponowny wgrany plik nie zduplikuje wpisów.
@@ -49,4 +102,4 @@
   <a class="btn" href="api/export/fuelio.csv">Pobierz Fuelio CSV</a>
 </div>
 {% endblock %}
-{% block scripts %}<script>FT.initSettings();</script>{% endblock %}
+{% block scripts %}<script>FT.initSettings({{ vehicle_id }});</script>{% endblock %}

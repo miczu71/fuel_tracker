@@ -132,6 +132,15 @@ _MIGRATIONS = [
     CREATE INDEX idx_attachments_fillup ON attachments(fillup_id);
     CREATE INDEX idx_attachments_expense ON attachments(expense_id);
     """,
+    # v5 — ustawienia edytowalne w UI (0.7.0). Klucz/wartość (wartość zawsze
+    # TEXT, typowanie po stronie fuel_tracker.settings); seedowane raz z opcji
+    # Supervisora przy starcie, potem baza ma pierwszeństwo.
+    """
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    );
+    """,
 ]
 
 
@@ -171,6 +180,26 @@ def ensure_vehicle(conn: sqlite3.Connection, name: str, tank_capacity_l: float,
     )
     conn.commit()
     return cur.lastrowid
+
+
+def get_vehicle(conn: sqlite3.Connection, vehicle_id: int) -> dict:
+    row = conn.execute(
+        "SELECT id, name, tank_capacity_l, fuel_type FROM vehicles WHERE id = ?",
+        (vehicle_id,)).fetchone()
+    return dict(row)
+
+
+def update_vehicle(conn: sqlite3.Connection, vehicle_id: int, fields: dict) -> bool:
+    allowed = {"name", "tank_capacity_l", "fuel_type"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    cur = conn.execute(
+        f"UPDATE vehicles SET {set_clause} WHERE id = ?",
+        (*updates.values(), vehicle_id))
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def category_id(conn: sqlite3.Connection, name: str | None) -> int:

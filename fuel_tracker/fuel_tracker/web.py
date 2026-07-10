@@ -16,6 +16,7 @@ from flask import (Flask, Response, g, jsonify, render_template, request,
 from . import (csv_fuelio, currency as cur_mod, db as dbm, importer_drivvo,
                prices as pr, queries, receipts, stations as stn, stats as st)
 from . import __version__
+from . import settings as settingsm
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,20 @@ _DRIVVO_VERIFY = {
     "volume": "sensor.skoda_superb_refuelling_volume_total",
 }
 
+# Klucze ustawień wskazujące na automatyzację HA do włączania/wyłączania
+# z Ustawień (0.7.0) — same automatyzacje (progi, notify) żyją w YAML
+# użytkownika, add-on tylko przełącza je on/off przez HA API.
+_ALERT_AUTOMATION_KEYS = (
+    "alert_budget_automation", "alert_cheap_fuel_automation",
+    "alert_lease_automation",
+)
+
 
 def create_app(db_path: str, vehicle_id: int, config: dict,
                on_data_change: Optional[Callable[[], None]] = None,
-               ha_state: Optional[Callable[[str], dict | None]] = None) -> Flask:
+               ha_state: Optional[Callable[[str], dict | None]] = None,
+               ha_call_service: Optional[
+                   Callable[[str, str, dict], dict | None]] = None) -> Flask:
     app = Flask(__name__)
     # 16 MB — zdjęcia paragonów z aparatu telefonu miewają 5–10 MB.
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
@@ -73,6 +84,12 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             except Exception:
                 logger.exception("Callback po zmianie danych nieudany")
 
+    def live_settings() -> dict:
+        return settingsm.get_settings(conn())
+
+    def live_vehicle() -> dict:
+        return dbm.get_vehicle(conn(), vehicle_id)
+
     def base() -> str:
         return request.headers.get("X-Ingress-Path", "")
 
@@ -81,46 +98,104 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     @app.get("/")
     def page_dashboard():
         return render_template("dashboard.html", base=base(),
-                               vehicle=config.get("vehicle_name", ""))
+                               vehicle=live_vehicle()["name"])
 
     @app.get("/fillups")
     def page_fillups():
         return render_template("fillups.html", base=base(),
-                               vehicle=config.get("vehicle_name", ""))
+                               vehicle=live_vehicle()["name"])
 
     @app.get("/fillup-form")
     def page_fillup_form():
         return render_template("fillup_form.html", base=base(),
-                               vehicle=config.get("vehicle_name", ""),
+                               vehicle=live_vehicle()["name"],
                                edit_id=request.args.get("id", ""),
                                currencies=cur_mod.CURRENCIES)
 
     @app.get("/map")
     def page_map():
         return render_template("map.html", base=base(),
-                               vehicle=config.get("vehicle_name", ""))
+                               vehicle=live_vehicle()["name"])
 
     @app.get("/expenses")
     def page_expenses():
         return render_template("expenses.html", base=base(),
-                               vehicle=config.get("vehicle_name", ""))
+                               vehicle=live_vehicle()["name"])
 
     @app.get("/statistics")
     def page_statistics():
         return render_template("statistics.html", base=base(),
-                               vehicle=config.get("vehicle_name", ""))
+                               vehicle=live_vehicle()["name"])
 
     @app.get("/settings")
     def page_settings():
         return render_template("settings.html", base=base(),
-                               vehicle=config.get("vehicle_name", ""))
+                               vehicle=live_vehicle()["name"],
+                               vehicle_id=vehicle_id)
+
+    # ── API: ustawienia / pojazd (0.7.0, edycja bez restartu) ──────────────
+
+    @app.get("/api/settings")
+    def api_settings_get():
+        result = dict(live_settings())
+        for key in _ALERT_AUTOMATION_KEYS:
+            entity_id = result[key]
+            state = None
+            if entity_id and ha_state:
+                data = ha_state(entity_id)
+                state = data["state"] if data else None
+            result[f"{key}_state"] = state
+        return jsonify(result)
+
+    @app.put("/api/settings")
+    def api_settings_put():
+        data = request.get_json(force=True)
+        updates = {k: v for k, v in data.items()
+                  if k in settingsm.SETTINGS_TYPES}
+        settingsm.set_settings(conn(), updates)
+        changed()
+        return jsonify({"ok": True})
+
+    @app.get("/api/vehicles/<int:vid>")
+    def api_vehicle_get(vid: int):
+        if vid != vehicle_id:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(live_vehicle())
+
+    @app.put("/api/vehicles/<int:vid>")
+    def api_vehicle_update(vid: int):
+        if vid != vehicle_id:
+            return jsonify({"error": "not found"}), 404
+        data = request.get_json(force=True)
+        if not dbm.update_vehicle(conn(), vid, data):
+            return jsonify({"error": "Brak poprawnych pól"}), 400
+        changed()
+        return jsonify({"ok": True})
+
+    @app.post("/api/settings/toggle-automation")
+    def api_settings_toggle_automation():
+        data = request.get_json(force=True)
+        key = data.get("key")
+        if key not in _ALERT_AUTOMATION_KEYS:
+            return jsonify({"error": "Nieznany klucz"}), 400
+        entity_id = live_settings()[key]
+        if not entity_id:
+            return jsonify({"error":
+                            "Encja automatyzacji nie skonfigurowana w Ustawieniach"}), 400
+        if not ha_call_service:
+            return jsonify({"error": "HA API niedostępne"}), 502
+        service = "turn_on" if data.get("turn_on") else "turn_off"
+        result = ha_call_service("automation", service, {"entity_id": entity_id})
+        if result is None:
+            return jsonify({"error": "Wywołanie usługi HA nieudane"}), 502
+        return jsonify({"ok": True})
 
     # ── API: podsumowanie / wykresy ───────────────────────────────────────
 
     @app.get("/api/summary")
     def api_summary():
         return jsonify(queries.summary(conn(), vehicle_id,
-                                       config.get("monthly_budget", 0.0)))
+                                       live_settings()["monthly_fuel_budget"]))
 
     # ── API: tankowania ───────────────────────────────────────────────────
 
@@ -176,7 +251,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             "price_per_l_orig": price_orig, "total_cost_orig": total_orig,
             "full_tank": 1 if data.get("full_tank") in (1, "1", True, "true", "on") else 0,
             "missed_previous": 1 if data.get("missed_previous") in (1, "1", True, "true", "on") else 0,
-            "fuel_type": data.get("fuel_type") or config.get("default_fuel_type", "PB95"),
+            "fuel_type": data.get("fuel_type") or live_vehicle()["fuel_type"],
             "station": (data.get("station") or "").strip() or None,
             "notes": (data.get("notes") or "").strip() or None,
             "paid_by": "own" if data.get("paid_by") in ("own", 1, "1", True, "true", "on") else "fleet_card",
@@ -310,9 +385,10 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     @app.get("/api/prefill")
     def api_prefill():
         """Prefill formularza: odometr z myskoda, ostatnia stacja i cena."""
+        s = live_settings()
         odometer = None
-        if ha_state and config.get("odometer_entity"):
-            data = ha_state(config["odometer_entity"])
+        if ha_state and s["odometer_entity"]:
+            data = ha_state(s["odometer_entity"])
             try:
                 odometer = int(float(data["state"])) if data else None
             except (KeyError, TypeError, ValueError):
@@ -323,8 +399,8 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             (vehicle_id,)).fetchone()
         # Pozycja telefonu (location_entity) → dopasowanie zapisanej stacji.
         lat = lon = matched = None
-        if ha_state and config.get("location_entity"):
-            data = ha_state(config["location_entity"])
+        if ha_state and s["location_entity"]:
+            data = ha_state(s["location_entity"])
             attrs = (data or {}).get("attributes", {})
             try:
                 lat, lon = float(attrs["latitude"]), float(attrs["longitude"])
@@ -340,7 +416,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             "station_matched": bool(matched),
             "latitude": lat, "longitude": lon,
             "price_per_l": last["price_per_l"] if last else None,
-            "fuel_type": config.get("default_fuel_type", "PB95"),
+            "fuel_type": live_vehicle()["fuel_type"],
         })
 
     @app.get("/api/rate")
@@ -474,7 +550,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
         try:
             parsed = receipts.analyze(str(attach_dir / filename))
             norm = receipts.normalize(
-                parsed, config.get("default_fuel_type", "PB95"))
+                parsed, live_vehicle()["fuel_type"])
         except receipts.ReceiptError as exc:
             return jsonify({"error": str(exc), "attachment_id": aid}), 502
         except Exception:
@@ -506,7 +582,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             return jsonify({"error": "Brak pliku"}), 400
         text = file.read().decode("utf-8-sig", errors="replace")
         report = csv_fuelio.import_into(
-            conn(), vehicle_id, text, config.get("default_fuel_type", "PB95"))
+            conn(), vehicle_id, text, live_vehicle()["fuel_type"])
         changed()
         return jsonify(report.as_dict())
 
@@ -524,7 +600,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
             result = importer_drivvo.run_import(
                 conn(), vehicle_id, email, password,
                 int(body.get("vehicle_id") or config.get("drivvo_vehicle_id", 0) or 0),
-                config.get("default_fuel_type", "PB95"),
+                live_vehicle()["fuel_type"],
                 include_refuellings=bool(body.get("include_refuellings")))
         except importer_drivvo.DrivvoError as exc:
             return jsonify({"error": str(exc)}), 502
@@ -574,8 +650,9 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
     def api_statistics():
         fillups = queries.fetch_fillups(conn(), vehicle_id)
         expenses = queries.fetch_expenses(conn(), vehicle_id)
-        region = config.get("price_region") or ""
-        fuel_type = config.get("default_fuel_type", "PB95")
+        vehicle = live_vehicle()
+        region = live_settings()["price_region"]
+        fuel_type = vehicle["fuel_type"]
         s = st.compute_stats(fillups)
 
         # Leasing: zapas km z HA (odo_vs_budget) + prognoza wyczerpania limitu.
@@ -621,7 +698,7 @@ def create_app(db_path: str, vehicle_id: int, config: dict,
                 "limit_depletion_date": depletion,
             },
             "estimated_range_km": st.estimated_range_km(
-                s.avg_consumption, float(config.get("tank_capacity_l") or 0)),
+                s.avg_consumption, float(vehicle["tank_capacity_l"] or 0)),
         })
 
     @app.get("/api/report.csv")

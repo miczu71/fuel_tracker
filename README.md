@@ -68,6 +68,12 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 - **Prefill formularza** — odometr z integracji myskoda
   (`odometer_entity`), ostatnia stacja i cena.
 - **Nocny backup** — `VACUUM INTO` do `/share/fuel_tracker/` (7 kopii).
+- **Ustawienia edytowalne w UI (bez restartu)** — budżet, waluta domyślna,
+  region cen, dane pojazdu (nazwa/pojemność baku/domyślne paliwo) i encje HA
+  (odometr/poziom paliwa/lokalizacja) zmienia się na stronie Ustawienia i
+  działa od razu. Karta „Powiadomienia" pozwala włączać/wyłączać z Ustawień
+  automatyzacje alertów zdefiniowane w HA (patrz „Integracja z HA") bez
+  wchodzenia do Home Assistant.
 
 ## Encje (MQTT discovery)
 
@@ -227,25 +233,37 @@ powyższe sensory wystarczą jako dane wejściowe.
 
 ## Konfiguracja
 
+> **Od 0.7.0:** `vehicle_name`, `tank_capacity_l`, `default_fuel_type`,
+> `monthly_fuel_budget`, `odometer_entity`, `fuel_level_entity`,
+> `location_entity` i `price_region` to teraz tylko **wartość startowa**
+> (seedowana do bazy przy pierwszym uruchomieniu) — edycja na żywo, bez
+> restartu add-onu, jest na stronie **Ustawienia** (karty Pojazd / Budżet /
+> Ceny regionalne / Encje HA). Zmiana tych opcji w Supervisorze po
+> pierwszym starcie nie ma już żadnego efektu — reszta opcji poniżej
+> zostaje techniczna (wymaga restartu).
+
 | Opcja | Domyślnie | Opis |
 |---|---|---|
-| `vehicle_name` | `Skoda Superb` | Nazwa pojazdu (i prefiks urządzenia MQTT) |
-| `tank_capacity_l` | `66.0` | Pojemność baku [L] |
-| `default_fuel_type` | `PB95` | Domyślny typ paliwa w formularzu |
-| `monthly_fuel_budget` | `984.0` | Miesięczny budżet paliwowy [PLN] |
-| `odometer_entity` | `sensor.skoda_superb_mileage` | Encja odometru do prefill formularza |
-| `fuel_level_entity` | `sensor.skoda_superb_fuel_level` | Encja poziomu paliwa (nieużywana) |
-| `location_entity` | `device_tracker.op12` | Encja z GPS telefonu do dopasowania stacji w formularzu |
-| `price_region` | `dolnośląskie` | Województwo do cen regionalnych (autocentrum.pl) |
+| `vehicle_name` | `Skoda Superb` | Nazwa pojazdu (i prefiks urządzenia MQTT) — wartość startowa, potem edycja w Ustawieniach |
+| `tank_capacity_l` | `66.0` | Pojemność baku [L] — wartość startowa, potem edycja w Ustawieniach |
+| `default_fuel_type` | `PB95` | Domyślny typ paliwa w formularzu — wartość startowa, potem edycja w Ustawieniach |
+| `monthly_fuel_budget` | `984.0` | Miesięczny budżet paliwowy [PLN] — wartość startowa, potem edycja w Ustawieniach |
+| `odometer_entity` | `sensor.skoda_superb_mileage` | Encja odometru do prefill formularza — wartość startowa, potem edycja w Ustawieniach |
+| `fuel_level_entity` | `sensor.skoda_superb_fuel_level` | Encja poziomu paliwa (nieużywana) — wartość startowa, potem edycja w Ustawieniach |
+| `location_entity` | `device_tracker.op12` | Encja z GPS telefonu do dopasowania stacji w formularzu — wartość startowa, potem edycja w Ustawieniach |
+| `price_region` | `dolnośląskie` | Województwo do cen regionalnych (autocentrum.pl) — wartość startowa, potem edycja w Ustawieniach |
 | `odo_budget_entity` | `sensor.odo_vs_budget` | Encja HA z zapasem km leasingu (strona Statystyki) |
 | `lease_km_limit` | `90000` | Limit km leasingu do prognozy wyczerpania (0 = wyłączone) |
 | `drivvo_email` / `drivvo_password` | — | Konto Drivvo do jednorazowego importu |
 | `drivvo_vehicle_id` | `0` | ID pojazdu w Drivvo (`0` = pierwszy z konta) |
-| `notify_service` | `notify/family` | Usługa powiadomień |
+| `notify_service` | `notify/family` | Usługa powiadomień (nieużywana — alerty idą przez pakiet automatyzacji HA, patrz „Integracja z HA") |
 | `mqtt_host` / `mqtt_port` / `mqtt_user` / `mqtt_password` | `core-mosquitto` / `1883` | Broker MQTT |
 | `log_level` | `info` | `debug` / `info` / `warning` / `error` |
 | `backup_share` | `/share/fuel_tracker` | Katalog backupów i auto-importu |
 | `timezone` | `Europe/Warsaw` | Strefa czasowa |
+
+Domyślna waluta tankowań (`default_currency`, domyślnie `PLN`) jest ustawieniem
+wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 
 ## REST API (przez ingress)
 
@@ -255,11 +273,11 @@ powyższe sensory wystarczą jako dane wejściowe.
 `POST /api/receipts/parse` · `GET /api/attachments/<id>` ·
 `GET /api/statistics` · `GET /api/report.csv` · `POST /api/import/csv` ·
 `POST /api/import/drivvo` · `GET /api/verify` · `GET /api/export/fuelio.csv` ·
-`GET /api/health`
+`GET|PUT /api/settings` · `POST /api/settings/toggle-automation` ·
+`GET|PUT /api/vehicles/<id>` · `GET /api/health`
 
 ## Plan rozwoju
 
-- **0.7.0** — ustawienia edytowalne w UI (bez restartu add-onu).
 - **0.8.0** — pojazdy: cykl życia (dodawanie/archiwizacja) + leasing per auto.
 - **0.9.0** — backup/restore w UI + PWA.
 

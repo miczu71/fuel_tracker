@@ -10,6 +10,7 @@ from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from . import __version__, csv_fuelio, db as dbm, ha_client, prices, queries
+from . import settings as settingsm
 from .publisher import MQTTPublisher
 from .web import create_app
 
@@ -86,6 +87,13 @@ def main() -> None:
     dbm.migrate(conn)
     vehicle_id = dbm.ensure_vehicle(conn, vehicle_name, tank_capacity,
                                     default_fuel)
+    settingsm.seed_from_options(conn, {
+        "monthly_fuel_budget": budget,
+        "price_region": price_region,
+        "odometer_entity": _env("ODOMETER_ENTITY"),
+        "fuel_level_entity": _env("FUEL_LEVEL_ENTITY"),
+        "location_entity": _env("LOCATION_ENTITY"),
+    })
     conn.close()
 
     auto_import_share(db_path, vehicle_id, share_dir, default_fuel)
@@ -116,9 +124,13 @@ def main() -> None:
     def publish_sensors() -> None:
         c = dbm.get_conn(db_path)
         try:
+            s = settingsm.get_settings(c)
+            vehicle = dbm.get_vehicle(c, vehicle_id)
             mqtt_pub.publish(queries.sensor_values(
-                c, vehicle_id, budget, fuel_type=default_fuel,
-                price_region=price_region, tank_capacity_l=tank_capacity))
+                c, vehicle_id, s["monthly_fuel_budget"],
+                fuel_type=vehicle["fuel_type"],
+                price_region=s["price_region"],
+                tank_capacity_l=vehicle["tank_capacity_l"]))
         except Exception:
             logger.exception("Publikacja MQTT nieudana")
         finally:
@@ -127,7 +139,8 @@ def main() -> None:
     def refresh_prices() -> None:
         c = dbm.get_conn(db_path)
         try:
-            if prices.refresh(c, price_region):
+            region = settingsm.get_settings(c)["price_region"]
+            if prices.refresh(c, region):
                 publish_sensors()
         except Exception:
             logger.exception("Odświeżenie cen paliw nieudane")
@@ -147,23 +160,20 @@ def main() -> None:
         db_path=db_path,
         vehicle_id=vehicle_id,
         config={
-            "monthly_budget": budget,
-            "default_fuel_type": default_fuel,
-            "odometer_entity": _env("ODOMETER_ENTITY"),
-            "fuel_level_entity": _env("FUEL_LEVEL_ENTITY"),
-            "location_entity": _env("LOCATION_ENTITY"),
+            # monthly_budget/default_fuel_type/odometer_entity/fuel_level_entity/
+            # location_entity/vehicle_name/price_region/tank_capacity_l żyją teraz
+            # w tabeli settings/vehicles (0.7.0) — web.py czyta je świeżo per
+            # request zamiast z tego zamrożonego dict-a.
             "drivvo_email": _env("DRIVVO_EMAIL"),
             "drivvo_password": _env("DRIVVO_PASSWORD"),
             "drivvo_vehicle_id": int(_env("DRIVVO_VEHICLE_ID", "0") or 0),
-            "vehicle_name": vehicle_name,
-            "price_region": price_region,
-            "tank_capacity_l": tank_capacity,
             "odo_budget_entity": _env("ODO_BUDGET_ENTITY"),
             "lease_km_limit": int(_env("LEASE_KM_LIMIT", "0") or 0),
             "share_dir": share_dir,
         },
         on_data_change=publish_sensors,
         ha_state=ha_client.get_state,
+        ha_call_service=ha_client.call_service,
     )
     logger.info("Web UI nasłuchuje na :8098 (ingress)")
     app.run(host="0.0.0.0", port=8098, debug=False, use_reloader=False)
