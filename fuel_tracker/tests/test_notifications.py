@@ -195,6 +195,38 @@ def test_failed_send_retries_next_tick(conn, sent):
     assert len(sent) == 2
 
 
+def test_parallel_evaluate_sends_once(tmp_path, sent):
+    """Regresja 0.9.0: równoległe joby schedulera wysyłały alert podwójnie."""
+    import threading
+    import time
+    from fuel_tracker import db as dbm
+    path = str(tmp_path / "race.db")
+    c = dbm.get_conn(path)
+    dbm.migrate(c)
+    c.close()
+
+    def slow_notify(service, title, message):
+        sent.append(title)
+        time.sleep(0.2)  # przytrzymaj blokadę, żeby drugi wątek czekał
+        return True
+
+    def run():
+        conn = dbm.get_conn(path)
+        try:
+            notifications.evaluate(conn, _settings(),
+                                   _values(budget_left_month=80.0),
+                                   slow_notify, now=NOW)
+        finally:
+            conn.close()
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(sent) == 1
+
+
 def test_migration_v7_creates_alert_state_and_drops_legacy_keys(tmp_path):
     from fuel_tracker import db as dbm
     c = dbm.get_conn(str(tmp_path / "m.db"))

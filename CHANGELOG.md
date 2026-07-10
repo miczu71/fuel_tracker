@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1
+
+- **Fix: podwójne powiadomienie przy równoległej ewaluacji** — przy starcie
+  0.9.0 joby `publish_sensors` i `refresh_prices` odpaliły równocześnie
+  i alert „Tanie paliwo" wyszedł dwa razy (oba wątki odczytały stan `ok`
+  zanim którykolwiek zapisał `cheap`). `notifications.evaluate` jest teraz
+  serializowane blokadą (`threading.Lock`) — dotyczy też `on_data_change`
+  z wątków Flaska. Test regresyjny z równoległymi wątkami (163/163 zielone).
+
 ## 0.9.0
 
 - **Pojazdy w jednej karcie** — karty „Pojazdy" i „Aktywny pojazd" scalone

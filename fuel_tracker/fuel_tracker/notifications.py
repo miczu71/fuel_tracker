@@ -10,12 +10,18 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from typing import Callable
 
 from . import settings as settingsm
 
 logger = logging.getLogger(__name__)
+
+# publish_sensors bywa wołane równolegle (joby schedulera + on_data_change
+# z wątków Flaska) — bez blokady dwa evaluate czytają stary stan zanim
+# którykolwiek zapisze nowy i alert wychodzi podwójnie (patrz start 0.9.0).
+_LOCK = threading.Lock()
 
 _SEVERITY = {"ok": 0, "warning": 1, "cheap": 1, "exceeded": 2}
 _ANTI_FLAP = timedelta(hours=24)
@@ -140,6 +146,13 @@ def evaluate(conn: sqlite3.Connection, settings: dict, values: dict,
              notify: Callable[[str, str, str], bool],
              now: datetime | None = None) -> None:
     """Przelicza stany alertów i wysyła powiadomienia przez usługę HA."""
+    with _LOCK:
+        _evaluate(conn, settings, values, notify, now)
+
+
+def _evaluate(conn: sqlite3.Connection, settings: dict, values: dict,
+              notify: Callable[[str, str, str], bool],
+              now: datetime | None = None) -> None:
     now = now or datetime.now()
     service = settingsm.normalize_notify_service(
         settings.get("notify_service", ""))
