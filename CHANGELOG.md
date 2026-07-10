@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0
+
+- **Integracja z HA** — nowa sekcja README „Integracja z HA" z gotowym
+  pakietem `automation:` na trzy alerty: budżet paliwowy (ostrzeżenie
+  <100 PLN, przekroczenie <0), tanie paliwo w regionie (cena regionalna
+  ≥0,20 PLN/L niższa od ostatniego tankowania przez ponad godzinę) i
+  tempo leasingu (zapas km z `odo_budget_entity` <1000 km przez 6 h lub
+  limit przekroczony). Zero zmian w kodzie add-onu — sensory MQTT już
+  istniały, brakowało tylko gotowej receptury na automatyzacje.
+- Wdrożone i zweryfikowane produkcyjnie: pakiet + przebudowana karta
+  Lovelace (mozaika `mushroom-template-card` na budżet/tankowanie/zużycie,
+  mini-wykresy zapasu leasingu i zysku z wynajmu) w konfiguracji autora —
+  wzór opisany w README do skopiowania.
+
 ## 0.5.1
 
 - **Parser: modele lite z fallbackiem** — weryfikacja produkcyjna 0.5.0

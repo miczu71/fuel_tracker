@@ -104,6 +104,127 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 > Rzeczywiste `entity_id` zależą od nazwy urządzenia — po pierwszym starcie
 > zweryfikuj je w **Narzędzia deweloperskie → Stany**.
 
+## Integracja z HA
+
+Sensory MQTT discovery są od razu gotowe do automatyzacji — wystarczy dodać
+poniższy pakiet do `packages/` i wpiąć go w `configuration.yaml`
+(`homeassistant.packages.fuel_tracker: !include packages/fuel_tracker.yaml`).
+Trzy gotowe alerty; podmień `notify.mobile_app_XXX` na swoją usługę
+powiadomień, a progi (100 PLN / 0,20 PLN/L / 1000 km) i skalę budżetu
+(`861` = `monthly_fuel_budget` − 123 PLN marginesu, dopasuj do swojej opcji)
+dopasuj do swoich liczb — encje mają prefiks zależny od `vehicle_name`
+(zweryfikuj rzeczywiste `entity_id` w **Narzędzia deweloperskie → Stany**
+zanim wkleisz do automatyzacji).
+
+```yaml
+automation:
+  - id: "fuel_tracker_alert_budzetu"
+    alias: "Fuel Tracker: Alert budżetu paliwowego"
+    description: >-
+      Powiadamia gdy pozostały budżet paliwowy miesiąca spada poniżej
+      100 PLN (ostrzeżenie) lub zostaje przekroczony (poniżej 0).
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.superb_fuel_budget_left_month
+        below: 100
+        id: ostrzezenie
+      - platform: numeric_state
+        entity_id: sensor.superb_fuel_budget_left_month
+        below: 0
+        id: przekroczony
+    action:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: przekroczony
+            sequence:
+              - service: notify.mobile_app_XXX
+                data:
+                  title: "⛽ Budżet paliwowy przekroczony"
+                  message: >-
+                    Budżet miesiąca przekroczony o
+                    {{ (states('sensor.superb_fuel_budget_left_month') | float(0) | abs) | round(2) }} PLN.
+                    Prognoza na cały miesiąc:
+                    {{ states('sensor.superb_fuel_month_forecast_cost') | float(0) | round(0) }} PLN.
+        default:
+          - service: notify.mobile_app_XXX
+            data:
+              title: "⛽ Budżet paliwowy na wyczerpaniu"
+              message: >-
+                Zostało {{ states('sensor.superb_fuel_budget_left_month') | float(0) | round(2) }} PLN
+                budżetu paliwowego na ten miesiąc. Prognoza na cały miesiąc:
+                {{ states('sensor.superb_fuel_month_forecast_cost') | float(0) | round(0) }} PLN.
+    mode: single
+
+  - id: "fuel_tracker_tanie_paliwo"
+    alias: "Fuel Tracker: Tanie paliwo w regionie"
+    description: >-
+      Powiadamia gdy cena regionalna (`price_region`) jest co najmniej
+      0,20 PLN/L niższa od ceny z ostatniego tankowania — utrzymująca się
+      ponad godzinę.
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.superb_fuel_price_vs_region
+        above: 0.20
+        for: "01:00:00"
+    action:
+      - service: notify.mobile_app_XXX
+        data:
+          title: "⛽ Tanie paliwo w regionie"
+          message: >-
+            Cena regionalna {{ states('sensor.superb_fuel_region_fuel_price') }} PLN/L —
+            o {{ states('sensor.superb_fuel_price_vs_region') | float(0) | round(2) }} PLN/L
+            taniej niż Twoje ostatnie tankowanie
+            ({{ states('sensor.superb_fuel_last_fillup_price') }} PLN/L).
+    mode: single
+
+  - id: "fuel_tracker_tempo_leasingu"
+    alias: "Fuel Tracker: Zapas km leasingu topnieje"
+    description: >-
+      Powiadamia gdy zapas kilometrów względem krzywej limitu leasingu
+      (`odo_budget_entity`) spada poniżej 1000 km na dłużej niż 6 h
+      (topnieje) lub poniżej 0 (limit przekroczony).
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.odo_vs_budget
+        below: 1000
+        for: "06:00:00"
+        id: zapas
+      - platform: numeric_state
+        entity_id: sensor.odo_vs_budget
+        below: 0
+        id: przekroczony
+    action:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: przekroczony
+            sequence:
+              - service: notify.mobile_app_XXX
+                data:
+                  title: "🚗 Limit km leasingu przekroczony"
+                  message: >-
+                    Przebieg wyprzedza krzywą limitu leasingu o
+                    {{ (states('sensor.odo_vs_budget') | float(0) | abs) | round(0) }} km.
+                    Tempo roczne: {{ states('sensor.superb_fuel_projected_annual_km') }} km/rok.
+        default:
+          - service: notify.mobile_app_XXX
+            data:
+              title: "🚗 Zapas km leasingu topnieje"
+              message: >-
+                Zapas względem krzywej limitu leasingu:
+                {{ states('sensor.odo_vs_budget') | float(0) | round(0) }} km.
+                Tempo roczne: {{ states('sensor.superb_fuel_projected_annual_km') }} km/rok.
+    mode: single
+```
+
+**Karta Lovelace** — encje z tabeli wyżej nadają się na kafelki
+`custom:mushroom-template-card` (mosaic budżet/tankowanie/zużycie) albo
+klasyczne `entities`/`glance`; `sensor.superb_fuel_budget_left_month` dobrze
+wygląda jako gauge (`custom:modern-circular-gauge` lub `custom:bar-card`)
+z progami przy 200 i 460 PLN. Konkretny układ zależy od Twojego dashboardu —
+powyższe sensory wystarczą jako dane wejściowe.
+
 ## Konfiguracja
 
 | Opcja | Domyślnie | Opis |
@@ -138,7 +259,6 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 
 ## Plan rozwoju
 
-- **0.6.0** — pakiet YAML dla HA i karta Lovelace.
 - **0.7.0** — ustawienia edytowalne w UI (bez restartu add-onu).
 - **0.8.0** — pojazdy: cykl życia (dodawanie/archiwizacja) + leasing per auto.
 - **0.9.0** — backup/restore w UI + PWA.
