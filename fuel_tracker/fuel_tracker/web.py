@@ -13,8 +13,9 @@ from typing import Callable, Optional
 from flask import (Flask, Response, g, jsonify, render_template, request,
                    send_from_directory)
 
-from . import (csv_fuelio, currency as cur_mod, db as dbm, importer_drivvo,
-               prices as pr, queries, receipts, stations as stn, stats as st)
+from . import (backup as bkp, csv_fuelio, currency as cur_mod, db as dbm,
+               importer_drivvo, prices as pr, queries, receipts,
+               stations as stn, stats as st)
 from . import __version__
 from . import settings as settingsm
 
@@ -34,8 +35,8 @@ def create_app(db_path: str, config: dict,
     app = Flask(__name__)
     # 16 MB — zdjęcia paragonów z aparatu telefonu miewają 5–10 MB.
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
-    attach_dir = Path(config.get("share_dir") or "/share/fuel_tracker") \
-        / "attachments"
+    share_dir = config.get("share_dir") or "/share/fuel_tracker"
+    attach_dir = Path(share_dir) / "attachments"
 
     @app.context_processor
     def inject_version():
@@ -134,6 +135,15 @@ def create_app(db_path: str, config: dict,
     def page_settings():
         return render_template("settings.html", base=base(),
                                vehicle=live_vehicle()["name"])
+
+    @app.get("/manifest.webmanifest")
+    def page_manifest():
+        # PWA (0.10.0) — musi być szablonem Jinja, nie statycznym plikiem:
+        # start_url/scope zależą od X-Ingress-Path danego żądania.
+        return Response(
+            render_template("manifest.webmanifest", base=base(),
+                            version=__version__),
+            mimetype="application/manifest+json")
 
     # ── API: ustawienia / pojazd (0.7.0, edycja bez restartu) ──────────────
 
@@ -611,6 +621,70 @@ def create_app(db_path: str, config: dict,
             return jsonify({"error": "not found"}), 404
         return send_from_directory(attach_dir, row["filename"],
                                    max_age=31536000)
+
+    # ── API: kopia zapasowa (0.10.0) ───────────────────────────────────────
+
+    @app.get("/api/backup/list")
+    def api_backup_list():
+        return jsonify(bkp.list_backups(share_dir))
+
+    def _backup_path(filename: str) -> Path | None:
+        if not filename or "/" in filename or "\\" in filename or ".." in filename:
+            return None
+        return Path(share_dir) / "backups" / filename
+
+    @app.post("/api/backup/restore")
+    def api_backup_restore():
+        data = request.get_json(force=True)
+        path = _backup_path((data.get("filename") or "").strip())
+        if path is None:
+            return jsonify({"error": "Nieprawidłowa nazwa pliku"}), 400
+        if not path.is_file():
+            return jsonify({"error": "not found"}), 404
+        try:
+            result = bkp.restore_from_path(str(path), db_path, share_dir)
+        except bkp.BackupError as exc:
+            return jsonify({"error": str(exc)}), 400
+        changed()
+        return jsonify(result)
+
+    @app.post("/api/backup/restore/upload")
+    def api_backup_restore_upload():
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "Brak pliku"}), 400
+        try:
+            result = bkp.restore_from_upload(file, db_path, share_dir)
+        except bkp.BackupError as exc:
+            return jsonify({"error": str(exc)}), 400
+        changed()
+        return jsonify(result)
+
+    @app.get("/api/backup/export.json")
+    def api_backup_export_json():
+        payload = bkp.export_json(conn())
+        return Response(
+            json.dumps(payload, ensure_ascii=False),
+            mimetype="application/json",
+            headers={"Content-Disposition":
+                     f"attachment; filename=fuel_tracker-export-"
+                     f"{datetime.now():%Y%m%d}.json"})
+
+    @app.post("/api/backup/import.json")
+    def api_backup_import_json():
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "Brak pliku"}), 400
+        try:
+            payload = json.loads(file.read().decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return jsonify({"error": "Plik nie jest poprawnym JSON"}), 400
+        try:
+            result = bkp.import_json(conn(), payload)
+        except bkp.BackupError as exc:
+            return jsonify({"error": str(exc)}), 400
+        changed()
+        return jsonify(result)
 
     # ── API: import / eksport / weryfikacja ───────────────────────────────
 

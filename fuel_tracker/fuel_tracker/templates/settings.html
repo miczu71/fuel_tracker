@@ -138,6 +138,29 @@
 </div>
 
 <div class="card">
+  <div class="card-title">Kopia zapasowa</div>
+  <p class="muted">Nocny backup bazy i zdjęć paragonów o 03:15 (przechowywane
+  7 dni). Przed każdym przywróceniem add-on automatycznie zapisuje kopię
+  bieżącej bazy — przywrócenie da się cofnąć.</p>
+  <div id="backup-list"></div>
+  <form id="backup-upload-form">
+    <input type="file" name="file" accept=".db" required>
+    <button type="submit" class="btn primary">Przywróć z własnego pliku .db</button>
+  </form>
+
+  <div class="card-title" style="margin-top:1.5rem">Pełna kopia (JSON)</div>
+  <p class="muted">Eksport/import wszystkich danych naraz. Import wymaga
+  dokładnie tej samej wersji add-onu co eksport — międzywersyjne przywracanie
+  rób przez plik .db powyżej (migruje automatycznie).</p>
+  <a class="btn" href="api/backup/export.json">Pobierz pełną kopię (JSON)</a>
+  <form id="backup-json-form">
+    <input type="file" name="file" accept=".json" required>
+    <button type="submit" class="btn">Przywróć z JSON</button>
+  </form>
+  <pre class="report" id="backup-json-report" hidden></pre>
+</div>
+
+<div class="card">
   <div class="card-title">Eksport</div>
   <a class="btn" href="api/export/fuelio.csv">Pobierz Fuelio CSV</a>
 </div>

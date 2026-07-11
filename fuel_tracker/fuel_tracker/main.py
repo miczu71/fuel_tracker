@@ -9,7 +9,7 @@ from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import __version__, csv_fuelio, db as dbm, ha_client, notifications
+from . import __version__, backup, csv_fuelio, db as dbm, ha_client, notifications
 from . import prices, queries
 from . import settings as settingsm
 from .publisher import MQTTPublisher
@@ -53,23 +53,6 @@ def auto_import_share(db_path: str, vehicle_id: int, share_dir: str,
                 logger.exception("Auto-import %s nieudany", csv_file.name)
     finally:
         conn.close()
-
-
-def backup_db(db_path: str, share_dir: str, keep: int = 7) -> None:
-    backups = Path(share_dir) / "backups"
-    backups.mkdir(parents=True, exist_ok=True)
-    target = backups / f"fuel_tracker-{datetime.now():%Y%m%d}.db"
-    conn = dbm.get_conn(db_path)
-    try:
-        conn.execute("VACUUM INTO ?", (str(target),))
-        logger.info("Backup bazy: %s", target)
-    except Exception:
-        logger.exception("Backup nieudany")
-    finally:
-        conn.close()
-    old = sorted(backups.glob("fuel_tracker-*.db"))[:-keep]
-    for f in old:
-        f.unlink(missing_ok=True)
 
 
 def main() -> None:
@@ -182,7 +165,7 @@ def main() -> None:
                       next_run_time=datetime.now())
     scheduler.add_job(refresh_prices, "interval", hours=6,
                       next_run_time=datetime.now())
-    scheduler.add_job(backup_db, "cron", hour=3, minute=15,
+    scheduler.add_job(backup.nightly_backup, "cron", hour=3, minute=15,
                       args=[db_path, share_dir])
     scheduler.start()
 

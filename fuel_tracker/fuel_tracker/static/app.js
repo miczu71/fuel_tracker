@@ -747,6 +747,70 @@ window.FT = (function () {
     }
     loadVehicleList();
 
+    const backupList = document.getElementById("backup-list");
+    async function loadBackupList() {
+      const rows = await getJSON("api/backup/list");
+      if (!rows.length) {
+        backupList.innerHTML = '<p class="muted">Brak nocnych kopii jeszcze.</p>';
+        return;
+      }
+      backupList.innerHTML = `
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Plik</th><th>Data</th>
+          <th class="num">Rozmiar</th><th></th></tr></thead>
+          <tbody>${rows.map((b) => `
+            <tr><td>${b.filename}</td><td>${b.created_at || "–"}</td>
+              <td class="num">${fmt(b.size_bytes / 1024 / 1024, 1)} MB</td>
+              <td><button type="button" class="btn small"
+                data-restore="${b.filename}">Przywróć</button></td></tr>`
+          ).join("")}</tbody>
+        </table></div>`;
+      backupList.querySelectorAll("[data-restore]").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          if (!confirm(`Przywrócić bazę z "${btn.dataset.restore}"? ` +
+              "Bieżące dane zostaną najpierw automatycznie zabezpieczone."))
+            return;
+          const r = await sendJSON("api/backup/restore", "POST",
+            { filename: btn.dataset.restore }).catch((e) => ({ error: e.message }));
+          if (r && r.error) { alert(r.error); return; }
+          location.reload();
+        }));
+    }
+    loadBackupList();
+
+    document.getElementById("backup-upload-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        if (!confirm("Przywrócić bazę z wgranego pliku? Bieżące dane " +
+            "zostaną najpierw automatycznie zabezpieczone."))
+          return;
+        const r = await fetch("api/backup/restore/upload",
+          { method: "POST", body: new FormData(form) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(data.error || `HTTP ${r.status}`); return; }
+        location.reload();
+      });
+
+    document.getElementById("backup-json-form").addEventListener(
+      "submit", async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const rep = document.getElementById("backup-json-report");
+        if (!confirm("Przywrócić WSZYSTKIE dane z pliku JSON? To zastąpi " +
+            "całą bieżącą bazę (poza pełną migracją .db, ta operacja wymaga " +
+            "identycznej wersji add-onu)."))
+          return;
+        rep.hidden = false;
+        rep.textContent = "Importuję…";
+        const r = await fetch("api/backup/import.json",
+          { method: "POST", body: new FormData(form) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { rep.textContent = data.error || `HTTP ${r.status}`; return; }
+        rep.textContent = "Import JSON zakończony.";
+        setTimeout(() => location.reload(), 1000);
+      });
+
     async function loadNotifyServices(current) {
       const select = document.getElementById("set-notify-service");
       let services = [];

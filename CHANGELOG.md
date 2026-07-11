@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.10.0
+
+- **Kopia zapasowa w UI** — nowy moduł `backup.py`. Nocny backup (03:15,
+  `VACUUM INTO`, retencja 7) obejmuje teraz też katalog `attachments/`
+  (zdjęcia paragonów) jako osobne archiwum `.tar.gz` z własną retencją —
+  wcześniej backupowana była tylko baza. Karta „Kopia zapasowa" w
+  Ustawieniach: lista nocnych kopii z przyciskiem „Przywróć" i upload
+  własnego pliku `.db`. Każde przywrócenie najpierw automatycznie
+  zabezpiecza bieżącą bazę (`backups/pre_restore/`, retencja 3, osobna od
+  kopii nocnych) i odrzuca pliki niebędące bazą SQLite lub pochodzące
+  z nowszej wersji schematu; starszy schemat jest migrowany automatycznie
+  po przywróceniu.
+- **Pełny eksport/import JSON** — `GET /api/backup/export.json` (wszystkie
+  10 tabel + wersja schematu) i `POST /api/backup/import.json` (pełne
+  zastąpienie w jednej transakcji, nie merge — wymaga dokładnie tej samej
+  wersji schematu co eksport; międzywersyjne przywracanie idzie przez
+  plik `.db`, który migruje automatycznie).
+- **PWA — dodaj do ekranu głównego** — `GET /manifest.webmanifest`
+  (szablon Jinja, `start_url`/`scope` uwzględniają `X-Ingress-Path`),
+  ikony w `static/icons/`, tagi `apple-mobile-web-app-*` w `base.html`.
+  Instalacja tylko przez natywne „Dodaj do ekranu głównego" w aplikacji
+  mobilnej HA (webview niesie autoryzację ingress) — bez service workera.
+- Nowe endpointy: `GET /api/backup/list`, `POST /api/backup/restore`,
+  `POST /api/backup/restore/upload`, `GET /api/backup/export.json`,
+  `POST /api/backup/import.json`, `GET /manifest.webmanifest`.
+- 33 nowe testy (`test_backup.py`, `test_backup_api.py`,
+  `test_manifest.py`) — nocny backup + retencja obu typów artefaktów,
+  walidacja kandydata do przywrócenia, bezpieczny snapshot przed
+  przywróceniem, auto-migracja starszego schematu, round-trip JSON,
+  atomowość/pełne-zastąpienie importu JSON, path-traversal w nazwie
+  pliku, manifest z poprawnym `start_url` per ingress (196/196 zielone).
+
 ## 0.9.1
 
 - **Fix: podwójne powiadomienie przy równoległej ewaluacji** — przy starcie

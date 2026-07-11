@@ -87,6 +87,19 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
   zapas km leasingu topnieje/przekroczony. Usługa notify, włączniki
   i progi edytowalne w karcie „Powiadomienia"; anty-spam — alert tylko
   przy wejściu w stan, ponownie po powrocie do normy (okno 24 h).
+- **Kopia zapasowa w UI (od 0.10.0)** — karta „Kopia zapasowa" w
+  Ustawieniach: lista nocnych backupów (`.db`, 7 dni) z przyciskiem
+  „Przywróć" (bieżąca baza jest automatycznie zabezpieczona przed
+  każdym przywróceniem), upload własnego pliku `.db` do przywrócenia
+  (auto-migruje starszy schemat). Osobno: pełny eksport/import **JSON**
+  wszystkich danych naraz (wymaga identycznej wersji add-onu — inaczej
+  użyj pliku `.db`, który migruje automatycznie). Nocny backup obejmuje
+  teraz też zdjęcia paragonów (`attachments/`, osobne archiwum `.tar.gz`).
+- **PWA — dodaj do ekranu głównego (od 0.10.0)** — z aplikacji mobilnej
+  HA (webview niesie autoryzację ingress) można dodać skrót do add-onu
+  na ekran główny telefonu, otwierający od razu formularz tankowania.
+  Bez service workera — instalacja tylko przez natywne „Dodaj do ekranu
+  głównego", nie przez kryteria instalowalności przeglądarki.
 
 ## Encje (MQTT discovery)
 
@@ -219,11 +232,15 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 `GET /api/vehicles` · `POST /api/vehicles` (od 0.9.0 także pola leasingu) ·
 `GET|PUT|DELETE /api/vehicles/<id>` ·
 `POST /api/vehicles/<id>/activate` · `POST /api/vehicles/<id>/archive` ·
-`POST /api/vehicles/<id>/unarchive` · `GET /api/health`
+`POST /api/vehicles/<id>/unarchive` · `GET /api/health` ·
+`GET /api/backup/list` · `POST /api/backup/restore` ·
+`POST /api/backup/restore/upload` · `GET /api/backup/export.json` ·
+`POST /api/backup/import.json` · `GET /manifest.webmanifest`
 
 ## Plan rozwoju
 
-- **0.10.0** — backup/restore w UI + PWA.
+- **0.11.0** — pełny multi-vehicle (kilka aut z równoległymi sensorami
+  MQTT, przełącznik widoku na każdej stronie UI).
 
 ## Rozwój
 
