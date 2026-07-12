@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.11.1
+
+- **Fix: usunięcie/archiwizacja pojazdu czyści jego urządzenie MQTT** —
+  znalezione podczas weryfikacji produkcyjnej 0.11.0: `DELETE
+  /api/vehicles/<id>` i `POST /api/vehicles/<id>/archive` usuwały pojazd
+  z bazy, ale zostawiały jego discovery retained na brokerze na zawsze —
+  encje sensor.* zostawały osierocone w rejestrze HA mimo że pojazd już
+  nie istniał. Nowy `MQTTPublisher.unpublish_device()` publikuje puste
+  retained payloady do wszystkich topików discovery danego urządzenia;
+  `web.py` wywołuje go po udanym delete/archive (przed `changed()`, żeby
+  ewentualne odtworzenie nowego aktywnego auta na tym samym gołym
+  `fuel_tracker` topiku — gdy usuwane/archiwizowane było auto aktywne —
+  poszło już po czyszczeniu, nie przed nim).
+- Nie dotyczy to samego `unarchive` (przywrócenie pojazdu po prostu
+  republikuje jego discovery przy najbliższym ticku).
+
 ## 0.11.0
 
 - **Pełny multi-vehicle** — kilka aut z równoległymi, żywymi sensorami MQTT

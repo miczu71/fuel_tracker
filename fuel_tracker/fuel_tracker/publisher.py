@@ -87,6 +87,10 @@ def _disc_topic(device_id: str, slug: str) -> str:
     return f"{_DISC_PREFIX}/sensor/{device_id}/{slug}/config"
 
 
+def _discovery_topics(device_id: str) -> list[str]:
+    return [_disc_topic(device_id, s.slug) for s in _SENSORS]
+
+
 def render_values(values: dict) -> dict[str, str]:
     """Mapa slug → payload; brakujące wartości publikujemy jako 'unknown'."""
     out: dict[str, str] = {}
@@ -201,6 +205,19 @@ class MQTTPublisher:
             return
         self._publish_discovery(device_id, device_name)
         self._publish_values(device_id, values)
+
+    def unpublish_device(self, device_id: str) -> None:
+        """Czyści retained discovery configs urządzenia — HA usuwa jego encje.
+        Bez tego usunięcie/archiwizacja pojazdu (0.11.1) zostawia osierocone
+        sensory w rejestrze HA, bo discovery zostaje retained na brokerze
+        na zawsze (znalezione przy weryfikacji produkcyjnej 0.11.0)."""
+        self._last_values.pop(device_id, None)
+        self._device_names.pop(device_id, None)
+        if not self._connected:
+            logger.debug("MQTT niepołączone — pominięto unpublish %s", device_id)
+            return
+        for topic in _discovery_topics(device_id):
+            self._client.publish(topic, "", retain=True)
 
     def _publish_discovery(self, device_id: str, device_name: str) -> None:
         for topic, payload in discovery_payloads(

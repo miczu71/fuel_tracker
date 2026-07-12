@@ -1,9 +1,12 @@
 """Pełny multi-vehicle w web.py (0.11.0): przełącznik ?vehicle_id= per
 request, rozdzielenie active_vehicle_id (globalny wybór) od
 viewing_vehicle_id (auto aktualnie przeglądane na stronie)."""
+from unittest.mock import MagicMock
+
 import pytest
 
 from fuel_tracker import db as dbm
+from fuel_tracker import publisher as pub
 from fuel_tracker.web import create_app
 
 
@@ -121,3 +124,57 @@ def test_verify_endpoint_ignores_viewing_param_stays_on_active_vehicle(ctx):
     # api_verify() zostaje przypięty do aktywnego auta — parametr ignorowany.
     assert active_verify == other_verify
     assert active_verify["checks"]["count"]["local"] == 1
+
+
+@pytest.fixture
+def ctx_mqtt(tmp_path):
+    """Jak ctx, ale z mockiem mqtt_unpublish do weryfikacji 0.11.1 hotfixu
+    (usunięcie/archiwizacja pojazdu musi czyścić jego MQTT discovery —
+    znalezione przy weryfikacji produkcyjnej 0.11.0: DELETE zostawiał
+    osierocone sensor.testowe_auto_* w rejestrze HA)."""
+    db_path = str(tmp_path / "multi_mqtt.db")
+    c = dbm.get_conn(db_path)
+    dbm.migrate(c)
+    active_id = dbm.ensure_vehicle(c, "Superb", 66.0, "PB95")
+    other_id = dbm.create_vehicle(c, "Mazda", 45.0, "PB95")
+    c.close()
+
+    mqtt_unpublish = MagicMock()
+    app = create_app(db_path=db_path, config={}, mqtt_unpublish=mqtt_unpublish)
+    app.testing = True
+    return app.test_client(), active_id, other_id, mqtt_unpublish
+
+
+def test_delete_vehicle_unpublishes_its_mqtt_device(ctx_mqtt):
+    client, active_id, other_id, mqtt_unpublish = ctx_mqtt
+    resp = client.delete(f"/api/vehicles/{other_id}")
+    assert resp.status_code == 200
+    mqtt_unpublish.assert_called_once_with(
+        pub.device_id_for_vehicle(other_id, active_id))
+
+
+def test_archive_vehicle_unpublishes_its_mqtt_device(ctx_mqtt):
+    client, active_id, other_id, mqtt_unpublish = ctx_mqtt
+    resp = client.post(f"/api/vehicles/{other_id}/archive")
+    assert resp.status_code == 200
+    mqtt_unpublish.assert_called_once_with(
+        pub.device_id_for_vehicle(other_id, active_id))
+
+
+def test_delete_active_vehicle_unpublishes_bare_device_id_before_new_active_republish(ctx_mqtt):
+    """Rożek: usunięcie AKTYWNEGO pojazdu musi wyczyścić gołe 'fuel_tracker'
+    (topic, pod którym był publikowany, bo był aktywny w momencie usunięcia),
+    nie prefiksowany '_<id>' wyliczony już PO usunięciu z nowym aktywnym."""
+    client, active_id, other_id, mqtt_unpublish = ctx_mqtt
+    resp = client.delete(f"/api/vehicles/{active_id}")
+    assert resp.status_code == 200
+    mqtt_unpublish.assert_called_once_with("fuel_tracker")
+
+
+def test_unarchive_does_not_call_mqtt_unpublish(ctx_mqtt):
+    client, active_id, other_id, mqtt_unpublish = ctx_mqtt
+    client.post(f"/api/vehicles/{other_id}/archive")
+    mqtt_unpublish.reset_mock()
+    resp = client.post(f"/api/vehicles/{other_id}/unarchive")
+    assert resp.status_code == 200
+    mqtt_unpublish.assert_not_called()

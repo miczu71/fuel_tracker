@@ -207,6 +207,7 @@ def main() -> None:
         on_data_change=publish_sensors,
         ha_state=ha_client.get_state,
         ha_services=ha_client.list_services,
+        mqtt_unpublish=mqtt_pub.unpublish_device,
     )
     logger.info("Web UI nasłuchuje na :8098 (ingress)")
     app.run(host="0.0.0.0", port=8098, debug=False, use_reloader=False)

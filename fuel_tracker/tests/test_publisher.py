@@ -87,6 +87,43 @@ def test_publish_wrapper_uses_active_device_id_unchanged():
     assert "fuel_tracker/sensors/fuel_tracker_2/total_cost/state" not in topics
 
 
+def test_unpublish_device_clears_discovery_topics_with_empty_retained_payload():
+    """0.11.1 hotfix: usunięcie/archiwizacja pojazdu musi czyścić jego retained
+    discovery, inaczej urządzenie zostaje osierocone w rejestrze HA (znalezione
+    podczas weryfikacji produkcyjnej 0.11.0 — sensor.testowe_auto_* przeżyły
+    DELETE /api/vehicles/2)."""
+    pub = publisher.MQTTPublisher("localhost", 1883, "", "")
+    pub._client = MagicMock()
+    pub._on_connect(pub._client, None, None, 0)
+    pub._client.reset_mock()
+
+    pub.unpublish_device("fuel_tracker_2")
+
+    calls = {c.args[0]: c for c in pub._client.publish.call_args_list}
+    topic = "homeassistant/sensor/fuel_tracker_2/total_cost/config"
+    assert topic in calls
+    assert calls[topic].args[1] == ""
+    assert calls[topic].kwargs.get("retain") is True
+    # Wszystkie sensory tego urządzenia, nie tylko jeden.
+    assert len(calls) == len(publisher._SENSORS)
+
+
+def test_unpublish_device_forgets_last_values_so_reconnect_does_not_resurrect_it():
+    """Bez tego kolejny _on_connect (reconnect MQTT) odtworzyłby usunięte
+    urządzenie ze stanu _last_values zapamiętanego sprzed usunięcia."""
+    pub = publisher.MQTTPublisher("localhost", 1883, "", "")
+    pub._client = MagicMock()
+    pub._on_connect(pub._client, None, None, 0)
+    pub.publish_for_vehicle("fuel_tracker_2", "Mazda Fuel", {"total_cost": 50.0})
+
+    pub.unpublish_device("fuel_tracker_2")
+    pub._client.reset_mock()
+    pub._on_connect(pub._client, None, None, 0)
+
+    topics = [c.args[0] for c in pub._client.publish.call_args_list]
+    assert not any("fuel_tracker_2" in t for t in topics)
+
+
 def test_no_monetary_on_per_unit_sensors():
     # PLN/L i PLN/km nie mogą mieć device_class monetary (lekcja z pv_roi).
     for s in publisher._SENSORS:

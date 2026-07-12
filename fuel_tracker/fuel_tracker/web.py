@@ -16,6 +16,7 @@ from flask import (Flask, Response, g, jsonify, render_template, request,
 from . import (backup as bkp, csv_fuelio, currency as cur_mod, db as dbm,
                importer_drivvo, prices as pr, queries, receipts,
                stations as stn, stats as st)
+from . import publisher as pub
 from . import __version__
 from . import settings as settingsm
 
@@ -31,7 +32,8 @@ _DRIVVO_VERIFY = {
 def create_app(db_path: str, config: dict,
                on_data_change: Optional[Callable[[], None]] = None,
                ha_state: Optional[Callable[[str], dict | None]] = None,
-               ha_services: Optional[Callable[[], list[str]]] = None) -> Flask:
+               ha_services: Optional[Callable[[], list[str]]] = None,
+               mqtt_unpublish: Optional[Callable[[str], None]] = None) -> Flask:
     app = Flask(__name__)
     # 16 MB — zdjęcia paragonów z aparatu telefonu miewają 5–10 MB.
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
@@ -265,9 +267,15 @@ def create_app(db_path: str, config: dict,
 
     @app.delete("/api/vehicles/<int:vid>")
     def api_vehicle_delete(vid: int):
+        # Device_id liczony PRZED usunięciem — jeśli vid był aktywny, to on
+        # trzymał gołe "fuel_tracker" w momencie publikacji, nie prefiksowany
+        # id (który by policzył się dopiero PO usunięciu, z nowym aktywnym).
+        device_id = pub.device_id_for_vehicle(vid, active_vehicle_id())
         ok, reason = dbm.delete_vehicle(conn(), vid)
         if not ok:
             return jsonify({"error": reason}), 409
+        if mqtt_unpublish:
+            mqtt_unpublish(device_id)
         changed()
         return jsonify({"ok": True})
 
@@ -285,9 +293,13 @@ def create_app(db_path: str, config: dict,
 
     @app.post("/api/vehicles/<int:vid>/archive")
     def api_vehicle_archive(vid: int):
+        # Jak przy delete: liczony przed mutacją (patrz komentarz wyżej).
+        device_id = pub.device_id_for_vehicle(vid, active_vehicle_id())
         if not dbm.archive_vehicle(conn(), vid):
             return jsonify({"error":
                             "Nie można zarchiwizować jedynego pojazdu"}), 400
+        if mqtt_unpublish:
+            mqtt_unpublish(device_id)
         changed()
         return jsonify({"ok": True})
 
