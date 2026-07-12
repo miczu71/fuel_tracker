@@ -8,7 +8,7 @@ from fuel_tracker import db as dbm
 from fuel_tracker import settings as settingsm
 from fuel_tracker.web import create_app
 
-FIXTURE = (Path(__file__).parent / "fixtures" / "fuelio_sample.csv").read_bytes()
+FIXTURE = (Path(__file__).parent / "fixtures" / "sample_export.csv").read_bytes()
 
 
 @pytest.fixture
@@ -17,12 +17,12 @@ def client(tmp_path):
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
     vid = dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
-    dbm.update_vehicle(c, vid, {"monthly_fuel_budget": 984.0,
+    dbm.update_vehicle(c, vid, {"monthly_fuel_budget": 800.0,
                                "odometer_entity": "sensor.odo"})
     c.close()
     app = create_app(
         db_path=db_path, config={},
-        ha_state=lambda e: {"state": "31468"},
+        ha_state=lambda e: {"state": "12345"},
     )
     app.testing = True
     return app.test_client()
@@ -67,13 +67,13 @@ def test_summary_and_budget(client):
     s = client.get("/api/summary").get_json()
     assert s["fillup_count"] == 2
     assert s["avg_consumption"] == 6.0
-    assert s["monthly_budget"] == 984.0
+    assert s["monthly_budget"] == 800.0
     assert len(s["monthly"]) == 2
 
 
 def test_prefill_uses_ha_odometer(client):
     pre = client.get("/api/prefill").get_json()
-    assert pre["odometer"] == 31468
+    assert pre["odometer"] == 12345
     assert pre["fuel_type"] == "PB95"
 
 
@@ -94,7 +94,7 @@ def test_csv_import_and_export(client):
         "file": (__import__("io").BytesIO(FIXTURE), "export.csv")})
     assert r.status_code == 200
     assert r.get_json()["fillups_added"] == 3
-    exp = client.get("/api/export/fuelio.csv")
+    exp = client.get("/api/export/log.csv")
     assert exp.status_code == 200
     assert b"## Log" in exp.data
 
@@ -108,18 +108,12 @@ def test_import_drivvo_requires_credentials(client):
     assert r.status_code == 502
 
 
-def test_verify_endpoint(client):
-    v = client.get("/api/verify").get_json()
-    assert "checks" in v
-    assert set(v["checks"]) == {"count", "cost", "volume"}
-
-
 def test_fillup_paid_by_roundtrip(client):
-    fid = _add_fillup(client, paid_by="own", latitude=51.11, longitude=16.98
+    fid = _add_fillup(client, paid_by="own", latitude=50.11, longitude=20.98
                       ).get_json()["id"]
     row = client.get(f"/api/fillups/{fid}").get_json()
     assert row["paid_by"] == "own"
-    assert row["latitude"] == 51.11
+    assert row["latitude"] == 50.11
     # Domyślnie karta flotowa.
     fid2 = _add_fillup(client, date="2025-02-01T12:00", odometer=1500
                        ).get_json()["id"]
@@ -149,18 +143,18 @@ def test_odometer_monotonic_validation(client):
 
 
 def test_fillup_saves_station(client):
-    _add_fillup(client, station="Orlen Legnicka",
-                latitude=51.1152, longitude=16.9812)
+    _add_fillup(client, station="Stacja A",
+                latitude=50.0000, longitude=20.0000)
     rows = client.get("/api/stations").get_json()
-    s = next(x for x in rows if x["name"] == "Orlen Legnicka")
-    assert s["latitude"] == 51.1152
+    s = next(x for x in rows if x["name"] == "Stacja A")
+    assert s["latitude"] == 50.0000
 
 
 def test_map_data_endpoint(client):
-    _add_fillup(client, station="Orlen Legnicka",
-                latitude=51.1152, longitude=16.9812, paid_by="own")
+    _add_fillup(client, station="Stacja A",
+                latitude=50.0000, longitude=20.0000, paid_by="own")
     data = client.get("/api/map-data").get_json()
-    s = next(x for x in data if x["name"] == "Orlen Legnicka")
+    s = next(x for x in data if x["name"] == "Stacja A")
     assert s["visits"] == 1 and s["own_paid"] == 1
 
 
@@ -175,25 +169,25 @@ def test_prefill_matches_station_by_gps(tmp_path):
     dbm.migrate(c)
     vid = dbm.ensure_vehicle(c, "T", 66.0, "PB95")
     c.execute("INSERT INTO stations (name, latitude, longitude) "
-              "VALUES ('Orlen Legnicka', 51.1152, 16.9812)")
+              "VALUES ('Stacja A', 50.0000, 20.0000)")
     dbm.update_vehicle(c, vid, {"odometer_entity": "sensor.odo",
-                               "location_entity": "device_tracker.op12"})
+                               "location_entity": "device_tracker.telefon"})
     c.commit()
     c.close()
 
     def ha_state(entity):
-        if entity == "device_tracker.op12":
+        if entity == "device_tracker.telefon":
             return {"state": "not_home",
-                    "attributes": {"latitude": 51.1153, "longitude": 16.9813}}
-        return {"state": "31468"}
+                    "attributes": {"latitude": 50.0001, "longitude": 20.0001}}
+        return {"state": "12345"}
 
     app = create_app(
         db_path=db_path, config={}, ha_state=ha_state)
     app.testing = True
     pre = app.test_client().get("/api/prefill").get_json()
-    assert pre["station"] == "Orlen Legnicka"
+    assert pre["station"] == "Stacja A"
     assert pre["station_matched"] is True
-    assert pre["latitude"] == 51.1153
+    assert pre["latitude"] == 50.0001
 
 
 def test_expense_edit(client):

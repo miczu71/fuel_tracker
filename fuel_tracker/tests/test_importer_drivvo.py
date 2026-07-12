@@ -41,11 +41,11 @@ def test_expenses_idempotent(conn, vehicle_id):
 
 
 def test_refuelling_volume_fallback_and_dedup(conn, vehicle_id):
-    # Wpis już zaimportowany z Fuelio CSV (data ucięta do minut + ten sam odometr).
+    # Wpis już zaimportowany z pliku CSV (data ucięta do minut + ten sam odometr).
     conn.execute(
         """INSERT INTO fillups (vehicle_id, date, odometer, volume_l,
            price_per_l, total_cost, full_tank, source)
-           VALUES (?, '2025-01-01 12:00', 1000, 40.0, 6.0, 240.0, 1, 'fuelio_csv')""",
+           VALUES (?, '2025-01-01 12:00', 1000, 40.0, 6.0, 240.0, 1, 'csv')""",
         (vehicle_id,))
     conn.commit()
     client = make_client(refuellings=[
@@ -82,11 +82,11 @@ def test_expenses_nested_tipos_despesa(conn, vehicle_id):
 
 
 def test_expenses_dedup_by_odometer_and_cost(conn, vehicle_id):
-    # Wpis z Fuelio CSV: data rozni sie o minute, opis wielkoscia liter.
+    # Wpis z pliku CSV: data rozni sie o minute, opis wielkoscia liter.
     conn.execute(
         """INSERT INTO expenses (vehicle_id, date, odometer, category_id,
            description, cost, source) VALUES (?, '2024-11-21 20:04', 2723,
-           2, 'plyny', 89.98, 'fuelio_csv')""", (vehicle_id,))
+           2, 'plyny', 89.98, 'csv')""", (vehicle_id,))
     conn.commit()
     client = make_client(expenses=[{
         "id_despesa": 5176262, "data": "2024-11-21 20:03:24", "odometro": 2723,

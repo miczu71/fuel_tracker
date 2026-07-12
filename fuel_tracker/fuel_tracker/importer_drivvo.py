@@ -2,8 +2,8 @@
 
 Synchroniczny port custom_components/drivvo/api.py: hasło jako md5 w polu
 "senha", token w nagłówku "x-token", nagłówki udające przeglądarkę web.drivvo.com.
-Tankowania są deduplikowane po (date, odometer) względem importu Fuelio CSV —
-Drivvo trzyma daty jako "YYYY-MM-DD HH:MM:SS", ucinamy do minut jak Fuelio.
+Tankowania są deduplikowane po (date, odometer) względem importu CSV —
+Drivvo trzyma daty jako "YYYY-MM-DD HH:MM:SS", ucinamy do minut jak w CSV.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any
 import requests
 
 from . import db as dbm
-from .csv_fuelio import ImportReport
+from .csv_io import ImportReport
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class DrivvoClient:
 
 
 def _date_minutes(value: str | None) -> str:
-    """'YYYY-MM-DD HH:MM:SS' → 'YYYY-MM-DD HH:MM' (format jak w Fuelio CSV)."""
+    """'YYYY-MM-DD HH:MM:SS' → 'YYYY-MM-DD HH:MM' (format jak w imporcie CSV)."""
     return (value or "")[:16]
 
 
@@ -149,7 +149,7 @@ def import_expenses(conn: sqlite3.Connection, vehicle_id: int,
         for idx, (raw_type, cost, desc) in enumerate(_expense_entries(r)):
             if not cost:
                 continue
-            # Dedup między źródłami (Fuelio CSV vs API): ten sam odometr i kwota,
+            # Dedup między źródłami (import CSV vs API): ten sam odometr i kwota,
             # bo data potrafi różnić się o minutę, a opis wielkością liter.
             if odometer and conn.execute(
                 "SELECT 1 FROM expenses WHERE vehicle_id=? AND odometer=? "

@@ -10,7 +10,7 @@ def app_ctx(tmp_path):
     db_path = str(tmp_path / "vehicles.db")
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
-    vid = dbm.ensure_vehicle(c, "Skoda", 66.0, "PB95")
+    vid = dbm.ensure_vehicle(c, "AutoA", 66.0, "PB95")
     c.close()
     app = create_app(db_path=db_path, config={})
     app.testing = True

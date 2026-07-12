@@ -1,8 +1,8 @@
-"""MQTT discovery publisher — urządzenie „Superb Fuel" z sensorami tankowań.
+"""MQTT discovery publisher — urządzenie per pojazd z sensorami tankowań.
 
 Wzorzec jak w pv_roi_tracker: paho loop_start(), availability topic z LWT,
 discovery retained. Uwaga na entity_id: HA składa je z nazwy urządzenia
-i nazwy sensora (oczekiwane sensor.superb_fuel_<slug>) — po pierwszej
+i nazwy sensora (oczekiwane sensor.<nazwa_pojazdu>_<slug>) — po pierwszej
 publikacji realne id trzeba potwierdzić przez /api/states.
 """
 from __future__ import annotations
@@ -138,7 +138,7 @@ def discovery_payloads(device_id: str, device_name: str,
 
 class MQTTPublisher:
     def __init__(self, host: str, port: int, user: str, password: str,
-                 device_name: str = "Superb Fuel", version: str = "0.0.0") -> None:
+                 device_name: str = "Fuel Tracker", version: str = "0.0.0") -> None:
         self._host = host
         self._port = port
         # device_name/_DEVICE_ID zostają jako domyślne urządzenie dla publish()

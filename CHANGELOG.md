@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.12.0
+
+- **Sanityzacja repo publicznego** — bez zmian funkcjonalnych w dzienniku,
+  statystykach i sensorach:
+  - Import/eksport CSV opisywany neutralnie (moduł przemianowany na
+    `csv_io.py`); nowe wpisy z importu CSV dostają tag źródła `csv`
+    (stare wiersze zachowują dotychczasowy tag — nic po nim nie filtruje).
+  - **Route eksportu przeniesiony** na `GET /api/export/log.csv`
+    (poprzedni route usunięty; plik pobiera się jako
+    `fuel_tracker_export.csv`).
+  - **Usunięty `GET /api/verify`** wraz z kartą „Weryfikacja migracji"
+    w Ustawieniach — jednorazowy raport porównawczy z czasów migracji
+    z Drivvo, na stałe przypięty do konkretnej instalacji; import z API
+    Drivvo zostaje bez zmian.
+  - Domyślne opcje add-onu zgenerycyzowane (nazwa pojazdu, encje HA,
+    budżet, region cen, usługa notify) — istniejących instalacji nie
+    dotyczy (Supervisor trzyma opcje użytkownika, seed tylko przy
+    pierwszym starcie).
+  - Testy przepisane na w pełni syntetyczne dane (226/226 zielonych).
+
 ## 0.11.1
 
 - **Fix: usunięcie/archiwizacja pojazdu czyści jego urządzenie MQTT** —
@@ -25,7 +45,7 @@
   odzwierciedlony w URL jako `?vehicle_id=`).
 - **Entity_id bez zmian dla dotychczasowego auta** — aktywny pojazd zostaje
   na dzisiejszym stałym prefiksie urządzenia MQTT (`fuel_tracker`,
-  `sensor.superb_fuel_*`) — zero migracji `template.yaml`/utility_meter/
+  `sensor.<pojazd>_fuel_*`) — zero migracji `template.yaml`/utility_meter/
   dashboardu. Każde KOLEJNE dodane auto dostaje własny, odrębny prefiks
   urządzenia (`fuel_tracker_<id>`) z własnym kompletem sensorów.
 - **Budżet i encje HA są teraz per pojazd** — miesięczny budżet paliwowy,
@@ -47,7 +67,7 @@
   `GET /api/verify` świadomie ignoruje `?vehicle_id=`: nowo dodane auto
   nie ma z czym się porównywać względem starych sensorów Drivvo.
 - **Eksport/import pełnej kopii JSON zostaje całobazowy** (bez pojęcia
-  „przeglądanego auta") — tylko eksport/import Fuelio CSV (zawsze per auto)
+  „przeglądanego auta") — tylko eksport/import CSV (zawsze per auto)
   przechodzi z aktywnego na przeglądane auto.
 - Migracje **#8** (`alert_state` → `PRIMARY KEY(alert, vehicle_id)`,
   backfill do aktywnego/pierwszego nie-zarchiwizowanego pojazdu) i **#9**
@@ -136,7 +156,7 @@
   automatyzacji w UI. Pakiet `fuel_tracker_package.yaml` w HA staje się
   **zbędny** — po weryfikacji powiadomień usuń go z `configuration.yaml`.
   Opcja `notify_service` jest teraz faktycznie używana (format kropkowy
-  `notify.mobile_app_op12`; stary zapis `notify/x` jest normalizowany).
+  `notify.mobile_app_telefon`; stary zapis `notify/x` jest normalizowany).
 - 18 nowych testów (`test_notifications.py` + rozszerzenia
   `test_settings_api.py`/`test_vehicles.py`): stany i eskalacje alertów,
   dedup/anty-flap, retry po nieudanej wysyłce, migracja #7, tworzenie
@@ -155,9 +175,9 @@
   automatycznie wybiera jedyny istniejący pojazd.
 - **Leasing per auto** — start/koniec leasingu, limit km i rata miesięczna
   edytowalne przy każdym pojeździe. Add-on liczy zapas km samodzielnie
-  (`sensor.superb_fuel_lease_km_margin`) tą samą krzywą co dotychczasowy
+  (`sensor.<pojazd>_fuel_lease_km_margin`) tą samą krzywą co dotychczasowy
   szablon `sensor.odo_vs_budget`, plus prognozę wyczerpania limitu
-  (`sensor.superb_fuel_lease_depletion_date`) — przebieg z
+  (`sensor.<pojazd>_fuel_lease_depletion_date`) — przebieg z
   `odometer_entity`, awaryjnie z ostatniego tankowania. Stary
   `sensor.odo_vs_budget`/`odo_budget_entity` zostają tymczasowo w
   odpowiedzi `/api/statistics` do porównania (±1 km) przed ewentualnym
@@ -306,7 +326,7 @@
   kwota oryginalna zachowana i widoczna na liście; cache kursów w SQLite
   (migracja #3), awaryjnie ostatni znany kurs
 - **Ceny regionalne paliw**: scraper autocentrum.pl (tabela wojewódzka,
-  opcja `price_region`, domyślnie dolnośląskie) co 6 h do tabeli
+  opcja `price_region`) co 6 h do tabeli
   `fuel_prices` (retencja 400 dni); sensory `region_fuel_price`
   i `price_vs_region` (moja ostatnia cena vs region)
 - **Strona „Statystyki"**: zasięg na baku, tempo roczne km, moja cena vs
@@ -350,14 +370,15 @@
   ORLEN Flota); nieużywane kategorie można ukryć w Ustawieniach
 - Schemat bazy przygotowany pod tankowania za granicą (waluta, kwoty
   oryginalne, kurs) — funkcja wchodzi w 0.4.0
-- Nowa opcja add-onu: `location_entity` (domyślnie `device_tracker.op12`)
+- Nowa opcja add-onu: `location_entity` (person/device_tracker z aplikacji
+  mobilnej HA)
 
 ## 0.1.3
 
 - Import wydatków z Drivvo działa z realnym schematem web API: kwoty są
   w zagnieżdżonej liście `tipos_despesa[].valor` (nie `valor_total`),
   opis w `observacao`, id w `id_despesa`
-- Dedup wydatków między Fuelio CSV a API Drivvo po (odometr, kwota) —
+- Dedup wydatków między importem CSV a API Drivvo po (odometr, kwota) —
   daty różnią się o minutę, opisy wielkością liter
 - Kategoria „Płyny" mapowana na Eksploatację
 
@@ -381,12 +402,12 @@
 Pierwsze wydanie:
 
 - Dziennik tankowań (pełny/częściowy bak, cena/L, stacja, GPS) z edycją i usuwaniem
-- Silnik statystyk w stylu Fuelio: spalanie L/100km liczone segmentami między pełnymi bakami, średnia ogólna Σvol/Σdist, koszt/km
+- Silnik statystyk: spalanie L/100km liczone segmentami między pełnymi bakami, średnia ogólna Σvol/Σdist, koszt/km
 - Wydatki w kategoriach (Serwis, Eksploatacja, Parking, Myjnia, …)
-- Import historii z eksportu Fuelio CSV (upload w UI lub auto-import z `/share/fuel_tracker/import/`)
+- Import historii z pliku CSV (upload w UI lub auto-import z `/share/fuel_tracker/import/`)
 - Import wydatków/serwisów z API Drivvo (jednorazowa migracja)
 - Raport weryfikacyjny importu (liczba wpisów, suma PLN, suma litrów)
-- Eksport do Fuelio CSV
-- Sensory MQTT discovery (urządzenie „Superb Fuel"): koszty, spalanie, ostatnie tankowanie, budżet miesięczny
-- Web UI po polsku przez ingress (pulpit z wykresami, formularz tankowania z prefill odometru z myskoda)
+- Eksport CSV
+- Sensory MQTT discovery: koszty, spalanie, ostatnie tankowanie, budżet miesięczny
+- Web UI po polsku przez ingress (pulpit z wykresami, formularz tankowania z prefill odometru z encji HA)
 - Nocny backup bazy do `/share/fuel_tracker/`

@@ -67,7 +67,7 @@
   <form class="form" id="notify-form">
     <label>Usługa powiadomień
       <select id="set-notify-service"></select>
-      <span class="muted">np. notify.mobile_app_op12</span></label>
+      <span class="muted">np. notify.mobile_app_telefon</span></label>
     <div class="alert-row">
       <label class="check">
         <input type="checkbox" id="alert-budget-on"> Alert budżetu</label>
@@ -91,9 +91,9 @@
 </div>
 
 <div class="card">
-  <div class="card-title">Import z Fuelio CSV</div>
-  <p class="muted">Wgraj plik eksportu z aplikacji Fuelio (sekcje „## Vehicle" /
-  „## Log"). Import jest idempotentny — ponowny wgrany plik nie zduplikuje wpisów.
+  <div class="card-title">Import CSV</div>
+  <p class="muted">Wgraj plik CSV z sekcjami „## Vehicle" / „## Log"
+  (format eksportu poniżej). Import jest idempotentny — ponowny wgrany plik nie zduplikuje wpisów.
   Pliki można też wrzucać do <code>/share/fuel_tracker/import/</code> —
   zaimportują się przy starcie add-onu.</p>
   <form id="csv-form">
@@ -113,14 +113,6 @@
   </label>
   <button class="btn primary" id="drivvo-btn">Importuj z Drivvo</button>
   <pre class="report" id="drivvo-report" hidden></pre>
-</div>
-
-<div class="card">
-  <div class="card-title">Weryfikacja migracji</div>
-  <p class="muted">Porównanie sum w bazie add-onu z żywymi sensorami Drivvo w HA
-  (liczba tankowań, suma PLN, suma litrów).</p>
-  <button class="btn" id="verify-btn">Sprawdź zgodność</button>
-  <div id="verify-result"></div>
 </div>
 
 <div class="card">
@@ -155,7 +147,7 @@
 
 <div class="card">
   <div class="card-title">Eksport</div>
-  <a class="btn" href="api/export/fuelio.csv?vehicle_id={{ vehicle_id }}">Pobierz Fuelio CSV</a>
+  <a class="btn" href="api/export/log.csv?vehicle_id={{ vehicle_id }}">Pobierz CSV</a>
 </div>
 {% endblock %}
 {% block scripts %}<script>FT.initSettings();</script>{% endblock %}

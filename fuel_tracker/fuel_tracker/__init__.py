@@ -1,3 +1,3 @@
-"""Fuel Tracker — dziennik tankowań i wydatków w stylu Fuelio."""
+"""Fuel Tracker — dziennik tankowań i wydatków samochodu."""
 
-__version__ = "0.11.1"
+__version__ = "0.12.0"

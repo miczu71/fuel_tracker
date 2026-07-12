@@ -43,7 +43,7 @@ STRUCTURE = {
             "description": "fiscal | fleet_card | other",
         },
         "station_name": {"type": "string",
-                         "description": "Sieć + miasto, np. 'ORLEN Będzino'"},
+                         "description": "Sieć + miasto, np. 'ORLEN Warszawa'"},
         "date": {"type": "string", "description": "YYYY-MM-DD"},
         "time": {"type": "string", "description": "HH:MM, 24h"},
         "odometer_km": {"type": "integer",

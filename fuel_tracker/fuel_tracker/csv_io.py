@@ -1,6 +1,6 @@
-"""Import/eksport w formacie CSV Fuelio.
+"""Import/eksport dziennika w formacie CSV.
 
-Format eksportu Fuelio: sekcje rozdzielone wierszami "## Nazwa", każda sekcja
+Format pliku: sekcje rozdzielone wierszami "## Nazwa", każda sekcja
 ma własny nagłówek CSV. Obsługiwane sekcje: Vehicle, Log (tankowania),
 CostCategories, Costs (wydatki). Pozostałe (Category, ...) są ignorowane.
 """
@@ -47,7 +47,7 @@ class ImportReport:
 
 
 def parse_sections(text: str) -> dict[str, list[dict]]:
-    """Tnie eksport Fuelio na sekcje; zwraca {nazwa: [wiersze jako dict]}."""
+    """Tnie plik CSV na sekcje; zwraca {nazwa: [wiersze jako dict]}."""
     sections: dict[str, list[dict]] = {}
     current: str | None = None
     header: list[str] | None = None
@@ -107,7 +107,7 @@ def _fillup_from_row(row: dict, default_fuel_type: str) -> dict | None:
 
 def import_into(conn: sqlite3.Connection, vehicle_id: int, text: str,
                 default_fuel_type: str = "PB95") -> ImportReport:
-    """Idempotentny import eksportu Fuelio do bazy."""
+    """Idempotentny import pliku CSV do bazy."""
     report = ImportReport()
     sections = parse_sections(text)
 
@@ -123,7 +123,7 @@ def import_into(conn: sqlite3.Connection, vehicle_id: int, text: str,
                (vehicle_id, date, odometer, volume_l, price_per_l, total_cost,
                 full_tank, missed_previous, fuel_type, station, latitude,
                 longitude, notes, source, source_uid)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'fuelio_csv',?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'csv',?)""",
             (vehicle_id, f["date"], f["odometer"], f["volume_l"],
              f["price_per_l"], f["total_cost"], f["full_tank"],
              f["missed_previous"], f["fuel_type"], f["station"], f["latitude"],
@@ -154,7 +154,7 @@ def import_into(conn: sqlite3.Connection, vehicle_id: int, text: str,
             """INSERT OR IGNORE INTO expenses
                (vehicle_id, date, odometer, category_id, description, cost,
                 source, source_uid)
-               VALUES (?,?,?,?,?,?,'fuelio_csv',?)""",
+               VALUES (?,?,?,?,?,?,'csv',?)""",
             (vehicle_id, date, odo, dbm.category_id(conn, cat_name), desc, cost,
              (row.get("UniqueId") or "").strip() or None),
         )
@@ -168,7 +168,7 @@ def import_into(conn: sqlite3.Connection, vehicle_id: int, text: str,
 
 
 def export_csv(conn: sqlite3.Connection, vehicle_id: int) -> str:
-    """Eksport w formacie Fuelio (sekcje Vehicle/Log/CostCategories/Costs)."""
+    """Eksport CSV (sekcje Vehicle/Log/CostCategories/Costs)."""
     out = io.StringIO()
     w = csv.writer(out, quoting=csv.QUOTE_ALL, lineterminator="\n")
 

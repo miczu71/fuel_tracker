@@ -15,7 +15,7 @@ def client(tmp_path):
 
     app = create_app(
         db_path=db_path, config={},
-        ha_services=lambda: ["notify.family", "notify.mobile_app_op12"])
+        ha_services=lambda: ["notify.family", "notify.mobile_app_test"])
     app.testing = True
     app.test_vehicle_id = vid
     return app.test_client()
@@ -28,10 +28,10 @@ def test_get_settings_returns_defaults(client):
 
 
 def test_put_settings_updates_and_persists(client):
-    r = client.put("/api/settings", json={"price_region": "dolnośląskie"})
+    r = client.put("/api/settings", json={"price_region": "pomorskie"})
     assert r.status_code == 200
     s = client.get("/api/settings").get_json()
-    assert s["price_region"] == "dolnośląskie"
+    assert s["price_region"] == "pomorskie"
 
 
 def test_put_vehicle_budget_takes_effect_without_restart(client):
@@ -47,7 +47,7 @@ def test_put_vehicle_budget_takes_effect_without_restart(client):
 
 def test_get_settings_alert_defaults(client):
     s = client.get("/api/settings").get_json()
-    assert s["notify_service"] == "notify.mobile_app_op12"
+    assert s["notify_service"] == ""
     assert s["alert_budget_enabled"] == 1
     assert s["alert_cheap_fuel_enabled"] == 1
     assert s["alert_lease_enabled"] == 1
@@ -83,7 +83,7 @@ def test_ha_services_returns_notify_list(client):
     r = client.get("/api/ha-services")
     assert r.status_code == 200
     assert r.get_json()["services"] == [
-        "notify.family", "notify.mobile_app_op12"]
+        "notify.family", "notify.mobile_app_test"]
 
 
 def test_ha_services_empty_without_callable(tmp_path):
@@ -108,10 +108,10 @@ def test_get_vehicle(client):
 
 def test_put_vehicle_updates_and_affects_prefill(client):
     r = client.put("/api/vehicles/1", json={
-        "name": "Skoda Superb", "tank_capacity_l": 70.0, "fuel_type": "PB98"})
+        "name": "Inne Auto", "tank_capacity_l": 70.0, "fuel_type": "PB98"})
     assert r.status_code == 200
     v = client.get("/api/vehicles/1").get_json()
-    assert v["name"] == "Skoda Superb"
+    assert v["name"] == "Inne Auto"
     assert v["fuel_type"] == "PB98"
     pre = client.get("/api/prefill").get_json()
     assert pre["fuel_type"] == "PB98"

@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 import sqlite3
 
-# Kategorie 1:1 z eksportu Fuelio użytkownika + "Inne" jako kubeł na nieznane.
-# "Płyny" (AdBlue, spryskiwacze) — domyślna kategoria wydatków z karty ORLEN Flota.
+# Domyślne kategorie wydatków + "Inne" jako kubeł na nieznane.
+# "Płyny" (AdBlue, spryskiwacze) — typowe wydatki z kart flotowych.
 DEFAULT_CATEGORIES = [
     "Serwis", "Eksploatacja", "Rejestracja", "Parking", "Myjnia",
     "Opłaty za przejazd", "Mandaty", "Tuning", "Ubezpieczenie", "Płyny", "Inne",

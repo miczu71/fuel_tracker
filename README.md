@@ -1,9 +1,9 @@
 # Fuel Tracker — add-on Home Assistant
 
-Dziennik tankowań i wydatków samochodu w stylu [Fuelio](https://www.fuel.io/),
-działający w 100% lokalnie (SQLite w `/data`). Zastępuje chmurowe aplikacje typu
-Drivvo/Fuelio: pełny import historii, statystyki spalania liczone jak w Fuelio,
-sensory MQTT discovery i mobilny web UI po polsku przez ingress.
+Dziennik tankowań i wydatków samochodu, działający w 100% lokalnie (SQLite
+w `/data`). Zastępuje chmurowe aplikacje do śledzenia tankowań: pełny import
+historii (CSV / API Drivvo), spalanie L/100km liczone segmentami między
+pełnymi bakami, sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 
 ## Instalacja
 
@@ -26,7 +26,7 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
   niepaliwowe z paragonu mieszanego mogą jednym kliknięciem utworzyć
   wydatek „Płyny". Zdjęcie zostaje jako załącznik wpisu (📷 na liście),
   przechowywane w `<backup_share>/attachments/`.
-- **Statystyki jak w Fuelio** — spalanie L/100km liczone segmentami między
+- **Statystyki spalania** — spalanie L/100km liczone segmentami między
   tankowaniami do pełna (partiale wliczane do segmentu), średnia ogólna
   Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne
   (paliwo z karty / paliwo prywatne / wydatki jako osobne serie wykresu).
@@ -59,16 +59,15 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 - **Wydatki w kategoriach** — Serwis, Eksploatacja, Rejestracja, Parking,
   Myjnia, Opłaty za przejazd, Mandaty, Tuning, Ubezpieczenie, Płyny, Inne;
   edycja wpisów, ukrywanie nieużywanych kategorii w Ustawieniach.
-- **Import Fuelio CSV** — upload w UI lub auto-import plików `*.csv`
-  z `/share/fuel_tracker/import/` przy starcie; idempotentny (re-import nie
+- **Import CSV** — upload w UI lub auto-import plików `*.csv`
+  z `/share/fuel_tracker/import/` przy starcie (format z sekcjami
+  `## Vehicle` / `## Log` — patrz eksport); idempotentny (re-import nie
   duplikuje wpisów).
 - **Import z API Drivvo** — jednorazowa migracja wydatków/serwisów
   (opcjonalnie także tankowań, deduplikowanych z importem CSV).
-- **Raport weryfikacyjny** — porównanie sum (liczba tankowań, PLN, litry)
-  z żywymi sensorami integracji Drivvo przed przepięciem szablonów.
-- **Eksport Fuelio CSV** — pełny round-trip, dane zawsze można zabrać ze sobą.
+- **Eksport CSV** — pełny round-trip, dane zawsze można zabrać ze sobą.
 - **Sensory MQTT discovery** — urządzenie w HA bez żadnej konfiguracji YAML.
-- **Prefill formularza** — odometr z integracji myskoda
+- **Prefill formularza** — odometr z encji HA pojazdu
   (`odometer_entity`), ostatnia stacja i cena.
 - **Nocny backup** — `VACUUM INTO` do `/share/fuel_tracker/` (7 kopii).
 - **Ustawienia edytowalne w UI (bez restartu)** — budżet, waluta domyślna,
@@ -110,8 +109,11 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
 
 ## Encje (MQTT discovery)
 
-Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel**),
-`identifiers: ["fuel_tracker"]`. Publikacja co 15 min oraz po każdej zmianie danych.
+Urządzenie: nazwa aktywnego pojazdu + „Fuel” (np. **Moje Auto Fuel**),
+`identifiers: ["fuel_tracker"]`. Publikacja co 15 min oraz po każdej zmianie
+danych. W tabeli poniżej `<pojazd>` to slug nazwy urządzenia wygenerowany
+przez HA — rzeczywiste `entity_id` zweryfikuj w **Narzędzia deweloperskie →
+Stany**.
 
 > **Od 0.11.0 — multi-vehicle:** powyższe dotyczy **dotychczasowego/aktywnego**
 > pojazdu — jego `entity_id` nie zmieniają się (zero migracji). Każde
@@ -122,32 +124,32 @@ Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel
 
 | Encja | Jednostka | Opis |
 |---|---|---|
-| `sensor.superb_fuel_total_cost` | PLN | Suma wydatków na paliwo (wszystkie tankowania) |
-| `sensor.superb_fuel_total_volume` | L | Suma zatankowanych litrów |
-| `sensor.superb_fuel_fillup_count` | — | Liczba tankowań |
-| `sensor.superb_fuel_avg_consumption` | L/100km | Średnie spalanie (Σvol/Σdist po segmentach) |
-| `sensor.superb_fuel_last_consumption` | L/100km | Spalanie ostatniego segmentu pełny→pełny |
-| `sensor.superb_fuel_cost_per_km` | PLN/km | Koszt paliwa na kilometr |
-| `sensor.superb_fuel_avg_price_per_l` | PLN/L | Średnia cena litra |
-| `sensor.superb_fuel_last_fillup_date` | timestamp | Data ostatniego tankowania |
-| `sensor.superb_fuel_last_fillup_odometer` | km | Odometr przy ostatnim tankowaniu |
-| `sensor.superb_fuel_last_fillup_price` | PLN/L | Cena litra przy ostatnim tankowaniu |
-| `sensor.superb_fuel_last_fillup_volume` | L | Litry ostatniego tankowania |
-| `sensor.superb_fuel_last_fillup_cost` | PLN | Kwota ostatniego tankowania |
-| `sensor.superb_fuel_last_fillup_station` | — | Stacja ostatniego tankowania |
-| `sensor.superb_fuel_expenses_total` | PLN | Suma wydatków pozapaliwowych |
-| `sensor.superb_fuel_budget_left_month` | PLN | Pozostały budżet paliwowy w bieżącym miesiącu |
-| `sensor.superb_fuel_month_fuel_cost` | PLN | Wydatki na paliwo w bieżącym miesiącu |
-| `sensor.superb_fuel_self_paid_fuel_total` | PLN | Suma tankowań opłaconych prywatnie („Zapłacone przeze mnie") |
-| `sensor.superb_fuel_region_fuel_price` | PLN/L | Cena regionalna paliwa (`price_region`, autocentrum.pl) |
-| `sensor.superb_fuel_price_vs_region` | PLN/L | Moja ostatnia cena − cena regionalna (ujemna = taniej) |
-| `sensor.superb_fuel_estimated_range` | km | Zasięg na pełnym baku przy średnim spalaniu |
-| `sensor.superb_fuel_month_forecast_cost` | PLN | Prognoza kosztu paliwa w bieżącym miesiącu |
-| `sensor.superb_fuel_ytd_fuel_cost` | PLN | Wydatki na paliwo od początku roku |
-| `sensor.superb_fuel_projected_annual_km` | km | Roczne tempo przebiegu (ekstrapolacja historii) |
-| `sensor.superb_fuel_best_station` | — | Stacja z najniższą średnią ceną (min. 2 tankowania) |
-| `sensor.superb_fuel_lease_km_margin` | km | Zapas km do limitu leasingu aktywnego pojazdu (ta sama krzywa co dawny `sensor.odo_vs_budget`) |
-| `sensor.superb_fuel_lease_depletion_date` | date | Prognoza daty wyczerpania limitu km przy obecnym tempie |
+| `sensor.<pojazd>_fuel_total_cost` | PLN | Suma wydatków na paliwo (wszystkie tankowania) |
+| `sensor.<pojazd>_fuel_total_volume` | L | Suma zatankowanych litrów |
+| `sensor.<pojazd>_fuel_fillup_count` | — | Liczba tankowań |
+| `sensor.<pojazd>_fuel_avg_consumption` | L/100km | Średnie spalanie (Σvol/Σdist po segmentach) |
+| `sensor.<pojazd>_fuel_last_consumption` | L/100km | Spalanie ostatniego segmentu pełny→pełny |
+| `sensor.<pojazd>_fuel_cost_per_km` | PLN/km | Koszt paliwa na kilometr |
+| `sensor.<pojazd>_fuel_avg_price_per_l` | PLN/L | Średnia cena litra |
+| `sensor.<pojazd>_fuel_last_fillup_date` | timestamp | Data ostatniego tankowania |
+| `sensor.<pojazd>_fuel_last_fillup_odometer` | km | Odometr przy ostatnim tankowaniu |
+| `sensor.<pojazd>_fuel_last_fillup_price` | PLN/L | Cena litra przy ostatnim tankowaniu |
+| `sensor.<pojazd>_fuel_last_fillup_volume` | L | Litry ostatniego tankowania |
+| `sensor.<pojazd>_fuel_last_fillup_cost` | PLN | Kwota ostatniego tankowania |
+| `sensor.<pojazd>_fuel_last_fillup_station` | — | Stacja ostatniego tankowania |
+| `sensor.<pojazd>_fuel_expenses_total` | PLN | Suma wydatków pozapaliwowych |
+| `sensor.<pojazd>_fuel_budget_left_month` | PLN | Pozostały budżet paliwowy w bieżącym miesiącu |
+| `sensor.<pojazd>_fuel_month_fuel_cost` | PLN | Wydatki na paliwo w bieżącym miesiącu |
+| `sensor.<pojazd>_fuel_self_paid_fuel_total` | PLN | Suma tankowań opłaconych prywatnie („Zapłacone przeze mnie") |
+| `sensor.<pojazd>_fuel_region_fuel_price` | PLN/L | Cena regionalna paliwa (`price_region`, autocentrum.pl) |
+| `sensor.<pojazd>_fuel_price_vs_region` | PLN/L | Moja ostatnia cena − cena regionalna (ujemna = taniej) |
+| `sensor.<pojazd>_fuel_estimated_range` | km | Zasięg na pełnym baku przy średnim spalaniu |
+| `sensor.<pojazd>_fuel_month_forecast_cost` | PLN | Prognoza kosztu paliwa w bieżącym miesiącu |
+| `sensor.<pojazd>_fuel_ytd_fuel_cost` | PLN | Wydatki na paliwo od początku roku |
+| `sensor.<pojazd>_fuel_projected_annual_km` | km | Roczne tempo przebiegu (ekstrapolacja historii) |
+| `sensor.<pojazd>_fuel_best_station` | — | Stacja z najniższą średnią ceną (min. 2 tankowania) |
+| `sensor.<pojazd>_fuel_lease_km_margin` | km | Zapas km do limitu leasingu aktywnego pojazdu (ta sama krzywa co dawny `sensor.odo_vs_budget`) |
+| `sensor.<pojazd>_fuel_lease_depletion_date` | date | Prognoza daty wyczerpania limitu km przy obecnym tempie |
 
 > Rzeczywiste `entity_id` zależą od nazwy urządzenia — po pierwszym starcie
 > zweryfikuj je w **Narzędzia deweloperskie → Stany**.
@@ -181,7 +183,7 @@ ticku. Stan alertów przeżywa restart add-onu.
 
 **Karta Lovelace** — encje z tabeli wyżej nadają się na kafelki
 `custom:mushroom-template-card` (mosaic budżet/tankowanie/zużycie) albo
-klasyczne `entities`/`glance`; `sensor.superb_fuel_budget_left_month` dobrze
+klasyczne `entities`/`glance`; `sensor.<pojazd>_fuel_budget_left_month` dobrze
 wygląda jako gauge (`custom:modern-circular-gauge` lub `custom:bar-card`)
 z progami przy 200 i 460 PLN. Konkretny układ zależy od Twojego dashboardu —
 powyższe sensory wystarczą jako dane wejściowe.
@@ -221,18 +223,18 @@ powyższe sensory wystarczą jako dane wejściowe.
 
 | Opcja | Domyślnie | Opis |
 |---|---|---|
-| `vehicle_name` | `Skoda Superb` | Nazwa **pierwszego** pojazdu (kolejne dodaje się w Ustawieniach) — wartość startowa, potem edycja w Ustawieniach |
-| `tank_capacity_l` | `66.0` | Pojemność baku pierwszego pojazdu [L] — wartość startowa, potem edycja w Ustawieniach |
+| `vehicle_name` | `Mój samochód` | Nazwa **pierwszego** pojazdu (kolejne dodaje się w Ustawieniach) — wartość startowa, potem edycja w Ustawieniach |
+| `tank_capacity_l` | `50.0` | Pojemność baku pierwszego pojazdu [L] — wartość startowa, potem edycja w Ustawieniach |
 | `default_fuel_type` | `PB95` | Domyślny typ paliwa pierwszego pojazdu — wartość startowa, potem edycja w Ustawieniach |
-| `monthly_fuel_budget` | `984.0` | Miesięczny budżet paliwowy [PLN] — wartość startowa, potem edycja w Ustawieniach |
-| `odometer_entity` | `sensor.skoda_superb_mileage` | Encja odometru do prefill formularza — wartość startowa, potem edycja w Ustawieniach |
-| `fuel_level_entity` | `sensor.skoda_superb_fuel_level` | Encja poziomu paliwa (nieużywana) — wartość startowa, potem edycja w Ustawieniach |
-| `location_entity` | `device_tracker.op12` | Encja z GPS telefonu do dopasowania stacji w formularzu — wartość startowa, potem edycja w Ustawieniach |
-| `price_region` | `dolnośląskie` | Województwo do cen regionalnych (autocentrum.pl) — wartość startowa, potem edycja w Ustawieniach |
-| `odo_budget_entity` | `sensor.odo_vs_budget` | Encja HA z zapasem km leasingu — tylko do porównania z nowym wyliczeniem per auto (strona Statystyki) |
+| `monthly_fuel_budget` | `0.0` | Miesięczny budżet paliwowy [PLN]; `0` = bez budżetu (sensor `budget_left_month` będzie ujemny do czasu ustawienia) — wartość startowa, potem edycja w Ustawieniach |
+| `odometer_entity` | *(puste)* | Encja odometru do prefill formularza — wartość startowa, potem edycja w Ustawieniach |
+| `fuel_level_entity` | *(puste)* | Encja poziomu paliwa (nieużywana) — wartość startowa, potem edycja w Ustawieniach |
+| `location_entity` | *(puste)* | Encja z GPS telefonu do dopasowania stacji w formularzu — wartość startowa, potem edycja w Ustawieniach |
+| `price_region` | `mazowieckie` | Województwo do cen regionalnych (autocentrum.pl) — wartość startowa, potem edycja w Ustawieniach |
+| `odo_budget_entity` | *(puste)* | Opcjonalna encja HA z własnym wyliczeniem zapasu km leasingu — tylko do porównania z wyliczeniem add-onu (strona Statystyki) |
 | `drivvo_email` / `drivvo_password` | — | Konto Drivvo do jednorazowego importu |
 | `drivvo_vehicle_id` | `0` | ID pojazdu w Drivvo (`0` = pierwszy z konta) |
-| `notify_service` | `notify.mobile_app_op12` | Usługa powiadomień dla wbudowanych alertów — wartość startowa, potem edycja w Ustawieniach (karta „Powiadomienia") |
+| `notify_service` | *(puste)* | Usługa powiadomień dla wbudowanych alertów; pusta = alerty nie są wysyłane — wartość startowa, potem edycja w Ustawieniach (karta „Powiadomienia") |
 | `mqtt_host` / `mqtt_port` / `mqtt_user` / `mqtt_password` | `core-mosquitto` / `1883` | Broker MQTT |
 | `log_level` | `info` | `debug` / `info` / `warning` / `error` |
 | `backup_share` | `/share/fuel_tracker` | Katalog backupów i auto-importu |
@@ -248,7 +250,7 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 `GET /api/stations` · `GET /api/stations/nearby` · `GET /api/map-data` ·
 `POST /api/receipts/parse` · `GET /api/attachments/<id>` ·
 `GET /api/statistics` · `GET /api/report.csv` · `POST /api/import/csv` ·
-`POST /api/import/drivvo` · `GET /api/verify` · `GET /api/export/fuelio.csv` ·
+`POST /api/import/drivvo` · `GET /api/export/log.csv` ·
 `GET|PUT /api/settings` · `GET /api/ha-services` ·
 `GET /api/vehicles` · `POST /api/vehicles` (od 0.9.0 także pola leasingu,
 od 0.11.0 też budżet i encje HA) ·
@@ -260,13 +262,16 @@ od 0.11.0 też budżet i encje HA) ·
 `POST /api/backup/import.json` · `GET /manifest.webmanifest`
 
 > **Od 0.11.0:** endpointy danych pojazdu (`fillups`, `expenses`, `prefill`,
-> `summary`, `map-data`, `statistics`, `report.csv`, `export/fuelio.csv`,
+> `summary`, `map-data`, `statistics`, `report.csv`, `export/log.csv`,
 > `import/csv`, `import/drivvo`, `receipts/parse`) przyjmują opcjonalny
 > query param `?vehicle_id=<id>`. Odczyty: brak/nieprawidłowy parametr
 > cicho spada na aktywne auto. Zapisy: parametr jawnie podany, ale
 > nieprawidłowy/zarchiwizowany → `400`; parametr całkowicie pominięty →
-> cichy fallback na aktywne (kompatybilność wsteczna). `GET /api/verify`
-> ignoruje ten parametr — zawsze dotyczy aktywnego auta.
+> cichy fallback na aktywne (kompatybilność wsteczna).
+>
+> **Od 0.12.0:** eksport CSV jest pod `GET /api/export/log.csv` (poprzedni
+> route eksportu usunięty); endpoint `GET /api/verify` (jednorazowy raport
+> porównawczy z czasów migracji z Drivvo) został usunięty.
 
 ## Plan rozwoju
 

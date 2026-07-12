@@ -23,8 +23,8 @@ def notify(sent):
 
 def _settings(**over):
     s = {
-        "monthly_fuel_budget": 984.0,
-        "notify_service": "notify.mobile_app_op12",
+        "monthly_fuel_budget": 800.0,
+        "notify_service": "notify.mobile_app_test",
         "alert_budget_enabled": 1,
         "alert_cheap_fuel_enabled": 1,
         "alert_lease_enabled": 1,
@@ -55,7 +55,7 @@ def test_budget_warning_notifies_with_slash_service(conn, vehicle_id, notify, se
                            _values(budget_left_month=80.0), vehicle_id, notify, now=NOW)
     assert len(sent) == 1
     service, title, message = sent[0]
-    assert service == "notify/mobile_app_op12"
+    assert service == "notify/mobile_app_test"
     assert title == "⛽ Budżet paliwowy na wyczerpaniu"
     assert "80.00 PLN" in message
 

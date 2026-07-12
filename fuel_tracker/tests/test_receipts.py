@@ -10,17 +10,17 @@ from fuel_tracker.web import create_app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# Wartości z prawdziwego dowodu wydania FLOTA (tests/fixtures/receipt_orlen_fleet.jpg)
+# Syntetyczne wartości w formacie dowodu wydania z karty flotowej.
 FLEET_PARSED = {
     "receipt_type": "fleet_card",
-    "station_name": "ORLEN Będzino",
-    "date": "2026-07-03",
-    "time": "15:56",
-    "odometer_km": 31462,
+    "station_name": "Stacja Testowa",
+    "date": "2026-01-15",
+    "time": "12:34",
+    "odometer_km": 12345,
     "fuel_name": "",
-    "fuel_volume_l": 52.470,
+    "fuel_volume_l": 45.500,
     "fuel_price_per_l": 0,
-    "fuel_total": 357.85,
+    "fuel_total": 300.30,
     "currency": "PLN",
     "non_fuel_items": [],
 }
@@ -28,13 +28,13 @@ FLEET_PARSED = {
 
 def test_normalize_fleet_receipt_derives_price_and_odometer():
     n = receipts.normalize(FLEET_PARSED, "PB95")
-    assert n["date"] == "2026-07-03T15:56"
-    assert n["odometer"] == 31462
-    assert n["volume_l"] == 52.47
-    assert n["total_cost"] == 357.85
-    assert n["price_per_l"] == round(357.85 / 52.47, 3)  # wyliczona: brak na paragonie
+    assert n["date"] == "2026-01-15T12:34"
+    assert n["odometer"] == 12345
+    assert n["volume_l"] == 45.5
+    assert n["total_cost"] == 300.30
+    assert n["price_per_l"] == round(300.30 / 45.5, 3)  # wyliczona: brak na paragonie
     assert n["fuel_type"] == "PB95"  # dowód wydania nie ma nazwy paliwa
-    assert n["station"] == "ORLEN Będzino"
+    assert n["station"] == "Stacja Testowa"
     assert n["non_fuel_total"] == 0
     assert n["currency"] == "PLN"
 
@@ -42,7 +42,7 @@ def test_normalize_fleet_receipt_derives_price_and_odometer():
 def test_normalize_fiscal_receipt_with_fluids():
     n = receipts.normalize({
         "receipt_type": "fiscal",
-        "station_name": "ORLEN Wrocław",
+        "station_name": "Stacja Miejska",
         "date": "2026-06-20", "time": "09:12",
         "odometer_km": 0,
         "fuel_name": "EFECTA 95",
@@ -111,8 +111,8 @@ def test_parse_endpoint_saves_and_prefills(client):
     r = _parse_receipt(client)
     assert r.status_code == 200
     body = r.get_json()
-    assert body["parsed"]["odometer"] == 31462
-    assert body["parsed"]["volume_l"] == 52.47
+    assert body["parsed"]["odometer"] == 12345
+    assert body["parsed"]["volume_l"] == 45.5
     aid = body["attachment_id"]
 
     # Plik jest serwowany z powrotem
@@ -124,8 +124,8 @@ def test_parse_endpoint_saves_and_prefills(client):
 def test_fillup_links_attachment(client):
     aid = _parse_receipt(client).get_json()["attachment_id"]
     r = client.post("/api/fillups", json={
-        "date": "2026-07-03T15:56", "odometer": 31462, "volume_l": 52.47,
-        "total_cost": 357.85, "full_tank": True, "attachment_id": aid,
+        "date": "2026-01-15T12:34", "odometer": 12345, "volume_l": 45.5,
+        "total_cost": 300.30, "full_tank": True, "attachment_id": aid,
     })
     assert r.status_code == 201
     rows = client.get("/api/fillups").get_json()
@@ -135,7 +135,7 @@ def test_fillup_links_attachment(client):
 def test_expense_links_attachment(client):
     aid = _parse_receipt(client).get_json()["attachment_id"]
     r = client.post("/api/expenses", json={
-        "date": "2026-07-03T15:56", "cost": 39.99,
+        "date": "2026-01-15T12:34", "cost": 39.99,
         "description": "AdBlue", "attachment_id": aid,
     })
     assert r.status_code == 201

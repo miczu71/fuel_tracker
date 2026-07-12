@@ -21,23 +21,23 @@ def test_ha_entities_and_budget_moved_to_vehicles_not_settings(conn):
 def test_seed_from_options_populates_missing_keys(conn):
     st.seed_from_options(conn, {
         "alert_budget_threshold": 150.0,
-        "price_region": "dolnośląskie",
+        "price_region": "pomorskie",
     })
     result = st.get_settings(conn)
     assert result["alert_budget_threshold"] == 150.0
-    assert result["price_region"] == "dolnośląskie"
+    assert result["price_region"] == "pomorskie"
 
 
 def test_seed_does_not_overwrite_existing_value(conn):
     st.set_settings(conn, {"price_region": "śląskie"})
-    st.seed_from_options(conn, {"price_region": "dolnośląskie"})
+    st.seed_from_options(conn, {"price_region": "pomorskie"})
     assert st.get_settings(conn)["price_region"] == "śląskie"
 
 
 def test_set_settings_updates_value_on_repeated_calls(conn):
     st.set_settings(conn, {"price_region": "śląskie"})
-    st.set_settings(conn, {"price_region": "dolnośląskie"})
-    assert st.get_settings(conn)["price_region"] == "dolnośląskie"
+    st.set_settings(conn, {"price_region": "pomorskie"})
+    assert st.get_settings(conn)["price_region"] == "pomorskie"
 
 
 def test_set_settings_ignores_unknown_keys(conn):
@@ -56,12 +56,12 @@ def test_get_vehicle_returns_row_created_at_startup(conn, vehicle_id):
 
 def test_update_vehicle_persists_allowed_fields(conn, vehicle_id):
     ok = dbm.update_vehicle(conn, vehicle_id, {
-        "name": "Skoda Superb Combi", "tank_capacity_l": 50.0,
+        "name": "Testowe Kombi", "tank_capacity_l": 50.0,
         "fuel_type": "PB98", "drivvo_vehicle_id": 999,
     })
     assert ok is True
     v = dbm.get_vehicle(conn, vehicle_id)
-    assert v["name"] == "Skoda Superb Combi"
+    assert v["name"] == "Testowe Kombi"
     assert v["tank_capacity_l"] == 50.0
     assert v["fuel_type"] == "PB98"
 

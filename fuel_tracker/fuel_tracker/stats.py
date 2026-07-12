@@ -1,4 +1,4 @@
-"""Silnik statystyk w stylu Fuelio.
+"""Silnik statystyk — spalanie segmentami między pełnymi bakami.
 
 Spalanie liczone segmentami: segment domyka tankowanie z pełnym bakiem,
 a otwiera poprzednie tankowanie z pełnym bakiem. Zużyte paliwo segmentu to

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import __version__, backup, csv_fuelio, db as dbm, ha_client, notifications
+from . import __version__, backup, csv_io, db as dbm, ha_client, notifications
 from . import prices, queries
 from . import settings as settingsm
 from .publisher import MQTTPublisher, device_id_for_vehicle
@@ -42,7 +42,7 @@ def auto_import_share(db_path: str, vehicle_id: int, share_dir: str,
         for csv_file in sorted(import_dir.glob("*.csv")):
             try:
                 text = csv_file.read_text(encoding="utf-8-sig")
-                report = csv_fuelio.import_into(
+                report = csv_io.import_into(
                     conn, vehicle_id, text, default_fuel_type)
                 logger.info("Auto-import %s: %s", csv_file.name,
                             report.as_dict())
@@ -63,9 +63,9 @@ def main() -> None:
     share_dir = _env("BACKUP_SHARE", "/share/fuel_tracker")
     default_fuel = _env("DEFAULT_FUEL_TYPE", "PB95")
     budget = float(_env("MONTHLY_FUEL_BUDGET", "0") or 0)
-    vehicle_name = _env("VEHICLE_NAME", "Skoda Superb")
-    price_region = _env("PRICE_REGION", "dolnośląskie")
-    tank_capacity = float(_env("TANK_CAPACITY_L", "66") or 66)
+    vehicle_name = _env("VEHICLE_NAME", "Mój samochód")
+    price_region = _env("PRICE_REGION", "mazowieckie")
+    tank_capacity = float(_env("TANK_CAPACITY_L", "50") or 50)
 
     conn = dbm.get_conn(db_path)
     dbm.migrate(conn)

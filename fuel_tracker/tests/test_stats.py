@@ -1,4 +1,4 @@
-"""Matematyka segmentów spalania (jak Fuelio)."""
+"""Matematyka segmentów spalania między pełnymi bakami."""
 from fuel_tracker import stats as st
 
 
@@ -12,8 +12,8 @@ def F(id, odo, vol, full=1, missed=0, date=None, cost=0.0):
 
 
 def test_simple_full_to_full():
-    # 636 km na 52.47 L → 8.25 (przypadek z realnego eksportu)
-    fillups = [F(1, 30826, 12.64), F(2, 31462, 52.47)]
+    # 500 km na 41.25 L → 8.25 L/100km
+    fillups = [F(1, 10000, 12.64), F(2, 10500, 41.25)]
     segs = st.build_segments(sorted(fillups, key=lambda f: f["odometer"]))
     assert len(segs) == 1
     assert round(segs[0].l_per_100km, 2) == 8.25

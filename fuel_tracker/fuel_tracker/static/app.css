@@ -166,7 +166,6 @@ body {
 }
 .verify-ok { color: var(--good); font-weight: 600; }
 .verify-bad { color: var(--critical); font-weight: 600; }
-#verify-result table { margin-top: 10px; }
 
 /* ── Mapa tankowań (0.2.0) ── */
 .map { height: 65vh; min-height: 340px; border-radius: 10px; }

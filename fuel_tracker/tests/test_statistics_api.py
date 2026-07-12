@@ -13,7 +13,7 @@ def client(tmp_path):
     dbm.migrate(c)
     vid = dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
     dbm.update_vehicle(c, vid, {"lease_km_limit": 90000})
-    settingsm.set_settings(c, {"price_region": "dolnośląskie"})
+    settingsm.set_settings(c, {"price_region": "pomorskie"})
     c.close()
     app = create_app(
         db_path=db_path,
@@ -26,9 +26,9 @@ def client(tmp_path):
 
 def _seed(client):
     fills = [
-        ("2026-01-10T10:00", 10000, 40, 6.20, "Orlen A", "fleet_card"),
-        ("2026-02-10T10:00", 10700, 42, 6.00, "BP B", "own"),
-        ("2026-03-10T10:00", 11400, 41, 5.80, "Orlen A", "fleet_card"),
+        ("2026-01-10T10:00", 10000, 40, 6.20, "Stacja A", "fleet_card"),
+        ("2026-02-10T10:00", 10700, 42, 6.00, "Stacja B", "own"),
+        ("2026-03-10T10:00", 11400, 41, 5.80, "Stacja A", "fleet_card"),
     ]
     for date, odo, vol, price, station, paid in fills:
         r = client.post("/api/fillups", json={
@@ -53,7 +53,7 @@ def test_statistics_endpoint(client):
                           "fuel_own": 252.0, "fluids": 45.0,
                           "other_expenses": 120.0}
     assert s["records"]["cheapest_fillup"]["price_per_l"] == 5.80
-    assert s["stations"][0]["station"] == "Orlen A"
+    assert s["stations"][0]["station"] == "Stacja A"
     assert s["monthly_km"] == [{"month": "2026-02", "km": 700},
                                {"month": "2026-03", "km": 700}]
     assert s["leasing"]["odo_vs_budget"] == 7672.0
@@ -62,7 +62,7 @@ def test_statistics_endpoint(client):
     assert s["leasing"]["projected_annual_km"] > 0
     assert s["leasing"]["limit_depletion_date"]  # data w przyszłości
     assert s["estimated_range_km"] > 0
-    assert s["region"]["name"] == "dolnośląskie"
+    assert s["region"]["name"] == "pomorskie"
     assert s["region"]["latest"] is None  # scraper jeszcze nie działał
 
 

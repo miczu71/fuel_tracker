@@ -5,13 +5,13 @@ from fuel_tracker import publisher
 
 
 def test_discovery_payloads_shape():
-    payloads = publisher.discovery_payloads("fuel_tracker", "Superb Fuel", "0.1.0")
+    payloads = publisher.discovery_payloads("fuel_tracker", "AutoA Fuel", "0.1.0")
     assert len(payloads) == len(publisher._SENSORS)
     topic = "homeassistant/sensor/fuel_tracker/total_cost/config"
     assert topic in payloads
     p = payloads[topic]
     assert p["unique_id"] == "fuel_tracker_total_cost"
-    assert p["device"]["name"] == "Superb Fuel"
+    assert p["device"]["name"] == "AutoA Fuel"
     assert p["device"]["identifiers"] == ["fuel_tracker"]
     assert p["device_class"] == "monetary"
     assert p["state_class"] == "total"
@@ -34,9 +34,9 @@ def test_device_id_for_vehicle_non_active_gets_suffixed_prefix():
 def test_discovery_payloads_active_device_id_topics_byte_identical_to_today():
     """Dowód decyzji 1: dla aktywnego auta topiki/unique_id/identifiers są
     dokładnie takie same jak przed 0.11.0 (żadnej migracji istniejących
-    encji sensor.superb_fuel_*)."""
+    encji sensor.<pojazd>_fuel_*)."""
     device_id = publisher.device_id_for_vehicle(1, active_vehicle_id=1)
-    payloads = publisher.discovery_payloads(device_id, "Superb Fuel", "0.11.0")
+    payloads = publisher.discovery_payloads(device_id, "AutoA Fuel", "0.11.0")
     topic = "homeassistant/sensor/fuel_tracker/total_cost/config"
     assert topic in payloads
     p = payloads[topic]
@@ -47,7 +47,7 @@ def test_discovery_payloads_active_device_id_topics_byte_identical_to_today():
 
 def test_discovery_payloads_other_vehicle_gets_distinct_topics_and_unique_id():
     device_id = publisher.device_id_for_vehicle(2, active_vehicle_id=1)
-    payloads = publisher.discovery_payloads(device_id, "Mazda Fuel", "0.11.0")
+    payloads = publisher.discovery_payloads(device_id, "AutoB Fuel", "0.11.0")
     topic = "homeassistant/sensor/fuel_tracker_2/total_cost/config"
     assert topic in payloads
     p = payloads[topic]
@@ -64,8 +64,8 @@ def test_publish_for_vehicle_routes_values_to_correct_device_topic():
     pub._on_connect(pub._client, None, None, 0)
     pub._client.reset_mock()
 
-    pub.publish_for_vehicle("fuel_tracker", "Superb Fuel", {"total_cost": 100.0})
-    pub.publish_for_vehicle("fuel_tracker_2", "Mazda Fuel", {"total_cost": 50.0})
+    pub.publish_for_vehicle("fuel_tracker", "AutoA Fuel", {"total_cost": 100.0})
+    pub.publish_for_vehicle("fuel_tracker_2", "AutoB Fuel", {"total_cost": 50.0})
 
     args = {c.args[0]: c.args[1] for c in pub._client.publish.call_args_list}
     assert args["fuel_tracker/sensors/total_cost/state"] == "100.0"
@@ -76,7 +76,7 @@ def test_publish_wrapper_uses_active_device_id_unchanged():
     """publish() (API 0.10.0 i wcześniej) zostaje cienkim wrapperem —
     zero zmian zachowania dla dzisiejszego jedynego auta."""
     pub = publisher.MQTTPublisher("localhost", 1883, "", "",
-                                  device_name="Superb Fuel")
+                                  device_name="AutoA Fuel")
     pub._client = MagicMock()
     pub._on_connect(pub._client, None, None, 0)
     pub._client.reset_mock()
@@ -114,7 +114,7 @@ def test_unpublish_device_forgets_last_values_so_reconnect_does_not_resurrect_it
     pub = publisher.MQTTPublisher("localhost", 1883, "", "")
     pub._client = MagicMock()
     pub._on_connect(pub._client, None, None, 0)
-    pub.publish_for_vehicle("fuel_tracker_2", "Mazda Fuel", {"total_cost": 50.0})
+    pub.publish_for_vehicle("fuel_tracker_2", "AutoB Fuel", {"total_cost": 50.0})
 
     pub.unpublish_device("fuel_tracker_2")
     pub._client.reset_mock()
@@ -162,11 +162,11 @@ def test_publish_before_connect_flushes_in_on_connect():
 def test_render_values():
     out = publisher.render_values({
         "total_cost": 14701.636, "avg_consumption": None,
-        "fillup_count": 50, "last_fillup_station": "Wrocław",
+        "fillup_count": 50, "last_fillup_station": "Stacja A",
     })
     assert out["total_cost"] == "14701.636"
     assert out["avg_consumption"] == "unknown"
     assert out["fillup_count"] == "50"
-    assert out["last_fillup_station"] == "Wrocław"
+    assert out["last_fillup_station"] == "Stacja A"
     # Każdy sensor ma payload
     assert set(out) == {s.slug for s in publisher._SENSORS}

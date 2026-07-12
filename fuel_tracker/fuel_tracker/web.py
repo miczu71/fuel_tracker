@@ -13,7 +13,7 @@ from typing import Callable, Optional
 from flask import (Flask, Response, g, jsonify, render_template, request,
                    send_from_directory)
 
-from . import (backup as bkp, csv_fuelio, currency as cur_mod, db as dbm,
+from . import (backup as bkp, csv_io, currency as cur_mod, db as dbm,
                importer_drivvo, prices as pr, queries, receipts,
                stations as stn, stats as st)
 from . import publisher as pub
@@ -21,13 +21,6 @@ from . import __version__
 from . import settings as settingsm
 
 logger = logging.getLogger(__name__)
-
-# Sensory Drivvo do bramki weryfikacyjnej migracji.
-_DRIVVO_VERIFY = {
-    "count": "sensor.skoda_superb_refuelling_total",
-    "cost": "sensor.skoda_superb_refuelling_value_total",
-    "volume": "sensor.skoda_superb_refuelling_volume_total",
-}
 
 def create_app(db_path: str, config: dict,
                on_data_change: Optional[Callable[[], None]] = None,
@@ -84,8 +77,7 @@ def create_app(db_path: str, config: dict,
         """Globalnie wybrane aktywne auto (settings.active_vehicle_id) —
         NIE to samo co auto aktualnie przeglądane na stronie (patrz
         viewing_vehicle_id). Używane tylko przez flagę "active" w
-        /api/vehicles i przez /api/verify (bramka migracji z Drivvo zostaje
-        przypięta do aktywnego auta na stałe — 0.11.0)."""
+        /api/vehicles (0.11.0)."""
         configured = int(live_settings().get("active_vehicle_id") or 0)
         return dbm.resolve_active_vehicle_id(conn(), configured)
 
@@ -515,7 +507,7 @@ def create_app(db_path: str, config: dict,
 
     @app.get("/api/prefill")
     def api_prefill():
-        """Prefill formularza: odometr z myskoda, ostatnia stacja i cena —
+        """Prefill formularza: odometr z encji HA, ostatnia stacja i cena —
         wszystko z encji HA PRZEGLĄDANEGO auta (0.11.0), nie aktywnego."""
         vehicle = viewing_vehicle()
         odometer = _odometer_from_ha(vehicle)
@@ -783,7 +775,7 @@ def create_app(db_path: str, config: dict,
         if not file:
             return jsonify({"error": "Brak pliku"}), 400
         text = file.read().decode("utf-8-sig", errors="replace")
-        report = csv_fuelio.import_into(
+        report = csv_io.import_into(
             conn(), vid, text, dbm.get_vehicle(conn(), vid)["fuel_type"])
         changed()
         return jsonify(report.as_dict())
@@ -814,35 +806,6 @@ def create_app(db_path: str, config: dict,
             return jsonify({"error": f"Import nieudany: {exc}"}), 502
         changed()
         return jsonify(result)
-
-    @app.get("/api/verify")
-    def api_verify():
-        """Bramka migracji: sumy w bazie vs żywe sensory Drivvo w HA.
-
-        Pozostaje przypięta do AKTYWNEGO auta na stałe (0.11.0) — nowo
-        dodane auto nie ma z czym się porównywać względem starych sensorów
-        Drivvo, więc ?vehicle_id= jest tu celowo ignorowany."""
-        fillups = queries.fetch_fillups(conn(), active_vehicle_id())
-        s = st.compute_stats(fillups)
-        local = {"count": s.fillup_count, "cost": s.total_cost,
-                 "volume": s.total_volume_l}
-        remote: dict = {}
-        if ha_state:
-            for key, entity in _DRIVVO_VERIFY.items():
-                data = ha_state(entity)
-                try:
-                    remote[key] = float(data["state"]) if data else None
-                except (KeyError, TypeError, ValueError):
-                    remote[key] = None
-        checks = {}
-        for key in local:
-            r = remote.get(key)
-            checks[key] = {
-                "local": local[key], "drivvo": r,
-                "match": r is not None and abs(local[key] - r) < 0.51,
-            }
-        return jsonify({"checks": checks,
-                        "all_match": all(c["match"] for c in checks.values())})
 
     # ── API: statystyki / raport ──────────────────────────────────────────
 
@@ -936,13 +899,13 @@ def create_app(db_path: str, config: dict,
             headers={"Content-Disposition":
                      "attachment; filename=fuel_report.csv"})
 
-    @app.get("/api/export/fuelio.csv")
+    @app.get("/api/export/log.csv")
     def api_export():
-        data = csv_fuelio.export_csv(conn(), viewing_vehicle_id())
+        data = csv_io.export_csv(conn(), viewing_vehicle_id())
         return Response(
             data, mimetype="text/csv",
             headers={"Content-Disposition":
-                     "attachment; filename=fuelio_export.csv"})
+                     "attachment; filename=fuel_tracker_export.csv"})
 
     @app.get("/api/health")
     def api_health():

@@ -1,9 +1,9 @@
 name: Fuel Tracker
-version: "0.11.1"
+version: "0.12.0"
 slug: fuel_tracker
 description: >-
-  Dziennik tankowań i wydatków samochodu w stylu Fuelio.
-  Spalanie L/100km liczone segmentami między pełnymi bakami, import z Fuelio CSV
+  Dziennik tankowań i wydatków samochodu.
+  Spalanie L/100km liczone segmentami między pełnymi bakami, import CSV
   i API Drivvo, sensory MQTT discovery, web UI przez ingress.
 url: "https://github.com/miczu71/fuel_tracker"
 arch:
@@ -20,19 +20,19 @@ ingress: true
 ingress_port: 8098
 panel_icon: mdi:gas-station
 options:
-  vehicle_name: "Skoda Superb"
-  tank_capacity_l: 66.0
+  vehicle_name: "Mój samochód"
+  tank_capacity_l: 50.0
   default_fuel_type: "PB95"
-  monthly_fuel_budget: 984.0
-  odometer_entity: "sensor.skoda_superb_mileage"
-  fuel_level_entity: "sensor.skoda_superb_fuel_level"
-  location_entity: "device_tracker.op12"
-  price_region: "dolnośląskie"
-  odo_budget_entity: "sensor.odo_vs_budget"
+  monthly_fuel_budget: 0.0
+  odometer_entity: ""
+  fuel_level_entity: ""
+  location_entity: ""
+  price_region: "mazowieckie"
+  odo_budget_entity: ""
   drivvo_email: ""
   drivvo_password: ""
   drivvo_vehicle_id: 0
-  notify_service: "notify.mobile_app_op12"
+  notify_service: ""
   mqtt_host: "core-mosquitto"
   mqtt_port: 1883
   mqtt_user: ""

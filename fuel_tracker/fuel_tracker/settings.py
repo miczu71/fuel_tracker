@@ -32,7 +32,7 @@ SETTINGS_TYPES: dict[str, type] = {
 DEFAULTS: dict[str, object] = {
     "default_currency": "PLN",
     "price_region": "",
-    "notify_service": "notify.mobile_app_op12",
+    "notify_service": "",
     "alert_budget_enabled": 1,
     "alert_cheap_fuel_enabled": 1,
     "alert_lease_enabled": 1,

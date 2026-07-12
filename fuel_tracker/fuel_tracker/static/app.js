@@ -343,7 +343,7 @@ window.FT = (function () {
       form.date.value = pre.date;
       if (pre.odometer) {
         form.odometer.value = pre.odometer;
-        document.getElementById("odo-hint").textContent = "(z myskoda)";
+        document.getElementById("odo-hint").textContent = "(z encji odometru)";
       }
       if (pre.station) form.station.value = pre.station;
       if (pre.price_per_l) P.value = pre.price_per_l;
@@ -983,28 +983,6 @@ window.FT = (function () {
       if (!id) return;
       await sendJSON(`api/categories/${id}`, "PUT",
         { hidden: !e.target.checked });
-    });
-
-    document.getElementById("verify-btn").addEventListener("click", async () => {
-      const out = document.getElementById("verify-result");
-      out.innerHTML = '<span class="muted">Sprawdzam…</span>';
-      const v = await getJSON("api/verify");
-      const names = { count: "Liczba tankowań", cost: "Suma PLN", volume: "Suma litrów" };
-      out.innerHTML = `
-        <div class="table-wrap"><table class="table">
-          <thead><tr><th></th><th class="num">Add-on</th>
-          <th class="num">Drivvo (HA)</th><th>Zgodność</th></tr></thead>
-          <tbody>${Object.entries(v.checks).map(([k, c]) => `
-            <tr><td>${names[k]}</td>
-            <td class="num">${fmt(c.local)}</td>
-            <td class="num">${c.drivvo === null ? "brak" : fmt(c.drivvo)}</td>
-            <td class="${c.match ? "verify-ok" : "verify-bad"}">
-              ${c.match ? "✔ OK" : "✘ różnica"}</td></tr>`).join("")}
-          </tbody></table></div>
-        <p class="${v.all_match ? "verify-ok" : "verify-bad"}">
-          ${v.all_match
-            ? "✔ Wszystko się zgadza — można przepiąć sensory."
-            : "✘ Sumy się różnią — nie przepinaj sensorów, sprawdź import."}</p>`;
     });
   }
 
