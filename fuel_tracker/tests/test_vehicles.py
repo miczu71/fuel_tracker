@@ -124,3 +124,112 @@ def test_create_vehicle_with_lease_kwargs(conn, vehicle_id):
     assert v["lease_end"] == "2028-12-31"
     assert v["lease_km_limit"] == 90000
     assert v["monthly_rate"] == 1850.0
+
+
+# ── 0.11.0: pełny multi-vehicle — encje HA + budżet per pojazd (migracja #9) ──
+
+def test_new_vehicle_has_ha_entity_and_budget_columns_with_defaults(conn, vehicle_id):
+    v = dbm.get_vehicle(conn, vehicle_id)
+    assert v["odometer_entity"] is None
+    assert v["fuel_level_entity"] is None
+    assert v["location_entity"] is None
+    assert v["monthly_fuel_budget"] == 0
+
+
+def test_create_vehicle_with_ha_entity_and_budget_kwargs(conn, vehicle_id):
+    new_id = dbm.create_vehicle(
+        conn, "Mazda", 45.0, "PB95",
+        odometer_entity="sensor.mazda_odo",
+        fuel_level_entity="sensor.mazda_fuel",
+        location_entity="device_tracker.mazda",
+        monthly_fuel_budget=500.0)
+    v = dbm.get_vehicle(conn, new_id)
+    assert v["odometer_entity"] == "sensor.mazda_odo"
+    assert v["fuel_level_entity"] == "sensor.mazda_fuel"
+    assert v["location_entity"] == "device_tracker.mazda"
+    assert v["monthly_fuel_budget"] == 500.0
+
+
+def test_update_vehicle_accepts_ha_entity_and_budget_fields(conn, vehicle_id):
+    dbm.update_vehicle(conn, vehicle_id, {
+        "odometer_entity": "sensor.new_odo", "monthly_fuel_budget": 700.0})
+    v = dbm.get_vehicle(conn, vehicle_id)
+    assert v["odometer_entity"] == "sensor.new_odo"
+    assert v["monthly_fuel_budget"] == 700.0
+
+
+def test_ensure_vehicle_seeds_ha_entities_and_budget_on_fresh_install(tmp_path):
+    """Świeża instalacja: ensure_vehicle tworzy jedyny wiersz — musi przyjąć
+    startowe wartości z opcji Supervisora, bo migracja #9 (backfill z
+    settings) dotyczy tylko upgrade'u istniejącej bazy."""
+    from fuel_tracker import db as freshdbm
+    c = freshdbm.get_conn(str(tmp_path / "fresh.db"))
+    freshdbm.migrate(c)
+    vid = freshdbm.ensure_vehicle(
+        c, "Skoda Superb", 66.0, "PB95",
+        odometer_entity="sensor.skoda_superb_mileage",
+        fuel_level_entity="sensor.skoda_superb_fuel_level",
+        location_entity="device_tracker.op12",
+        monthly_fuel_budget=984.0)
+    v = freshdbm.get_vehicle(c, vid)
+    assert v["odometer_entity"] == "sensor.skoda_superb_mileage"
+    assert v["fuel_level_entity"] == "sensor.skoda_superb_fuel_level"
+    assert v["location_entity"] == "device_tracker.op12"
+    assert v["monthly_fuel_budget"] == 984.0
+    c.close()
+
+
+def _migrate_to(conn, version):
+    """Symulacja upgrade'u ze starszego schematu (jak w test_notifications.py)."""
+    for script in dbm._MIGRATIONS[:version]:
+        conn.executescript(script)
+    conn.execute(f"PRAGMA user_version = {version}")
+    conn.commit()
+
+
+def test_migration_v9_backfills_ha_entities_and_budget_from_global_settings(tmp_path):
+    c = dbm.get_conn(str(tmp_path / "m9.db"))
+    _migrate_to(c, 8)
+    c.execute("INSERT INTO vehicles (name, tank_capacity_l, fuel_type) "
+             "VALUES ('Superb', 66, 'PB95')")
+    c.execute("INSERT INTO vehicles (name, tank_capacity_l, fuel_type) "
+             "VALUES ('Mazda', 50, 'PB95')")
+    c.execute("INSERT INTO settings (key, value) VALUES "
+             "('odometer_entity', 'sensor.skoda_superb_mileage')")
+    c.execute("INSERT INTO settings (key, value) VALUES "
+             "('fuel_level_entity', 'sensor.skoda_superb_fuel_level')")
+    c.execute("INSERT INTO settings (key, value) VALUES "
+             "('location_entity', 'device_tracker.op12')")
+    c.execute("INSERT INTO settings (key, value) VALUES "
+             "('monthly_fuel_budget', '984.0')")
+    c.commit()
+    dbm.migrate(c)
+    rows = c.execute(
+        "SELECT name, odometer_entity, fuel_level_entity, location_entity, "
+        "monthly_fuel_budget FROM vehicles ORDER BY id").fetchall()
+    for row in rows:
+        assert row["odometer_entity"] == "sensor.skoda_superb_mileage"
+        assert row["fuel_level_entity"] == "sensor.skoda_superb_fuel_level"
+        assert row["location_entity"] == "device_tracker.op12"
+        assert row["monthly_fuel_budget"] == 984.0
+    c.close()
+
+
+def test_migration_v9_removes_backfilled_keys_from_settings(tmp_path):
+    c = dbm.get_conn(str(tmp_path / "m9b.db"))
+    _migrate_to(c, 8)
+    c.execute("INSERT INTO vehicles (name, tank_capacity_l, fuel_type) "
+             "VALUES ('Superb', 66, 'PB95')")
+    c.execute("INSERT INTO settings (key, value) VALUES "
+             "('odometer_entity', 'sensor.skoda_superb_mileage')")
+    c.execute("INSERT INTO settings (key, value) VALUES "
+             "('price_region', 'dolnośląskie')")
+    c.commit()
+    dbm.migrate(c)
+    remaining = {r["key"] for r in c.execute("SELECT key FROM settings").fetchall()}
+    assert "odometer_entity" not in remaining
+    assert "fuel_level_entity" not in remaining
+    assert "location_entity" not in remaining
+    assert "monthly_fuel_budget" not in remaining
+    assert "price_region" in remaining  # zostaje globalny
+    c.close()

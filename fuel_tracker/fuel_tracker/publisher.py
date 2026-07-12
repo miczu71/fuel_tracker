@@ -66,12 +66,25 @@ _SENSORS: list[_Sensor] = [
 ]
 
 
-def _state_topic(slug: str) -> str:
-    return f"{_STATE_PREFIX}/{slug}/state"
+def device_id_for_vehicle(vehicle_id: int, active_vehicle_id: int) -> str:
+    """0.11.0 decyzja usera: aktywne auto zostaje na dzisiejszym stałym
+    device_id ("fuel_tracker") — zero migracji entity_id istniejących
+    sensorów. Każde INNE auto dostaje własny, odrębny prefiks."""
+    if vehicle_id == active_vehicle_id:
+        return _DEVICE_ID
+    return f"{_DEVICE_ID}_{vehicle_id}"
 
 
-def _disc_topic(slug: str) -> str:
-    return f"{_DISC_PREFIX}/sensor/{_DEVICE_ID}/{slug}/config"
+def _state_topic(device_id: str, slug: str) -> str:
+    # Aktywne auto (device_id == _DEVICE_ID) zostaje na dzisiejszym gołym
+    # topiku bez segmentu device_id — dowód zero-migracji w testach.
+    if device_id == _DEVICE_ID:
+        return f"{_STATE_PREFIX}/{slug}/state"
+    return f"{_STATE_PREFIX}/{device_id}/{slug}/state"
+
+
+def _disc_topic(device_id: str, slug: str) -> str:
+    return f"{_DISC_PREFIX}/sensor/{device_id}/{slug}/config"
 
 
 def render_values(values: dict) -> dict[str, str]:
@@ -88,10 +101,11 @@ def render_values(values: dict) -> dict[str, str]:
     return out
 
 
-def discovery_payloads(device_name: str, version: str) -> dict[str, dict]:
+def discovery_payloads(device_id: str, device_name: str,
+                       version: str) -> dict[str, dict]:
     """Mapa topic → payload discovery (wydzielone dla testów)."""
     device = {
-        "identifiers": [_DEVICE_ID],
+        "identifiers": [device_id],
         "name": device_name,
         "manufacturer": "Custom",
         "model": "fuel_tracker",
@@ -101,8 +115,8 @@ def discovery_payloads(device_name: str, version: str) -> dict[str, dict]:
     for s in _SENSORS:
         p: dict = {
             "name": s.name,
-            "unique_id": f"{_DEVICE_ID}_{s.slug}",
-            "state_topic": _state_topic(s.slug),
+            "unique_id": f"{device_id}_{s.slug}",
+            "state_topic": _state_topic(device_id, s.slug),
             "availability_topic": _AVAIL_TOPIC,
             "device": device,
         }
@@ -114,7 +128,7 @@ def discovery_payloads(device_name: str, version: str) -> dict[str, dict]:
             p["state_class"] = s.state_class
         if s.icon:
             p["icon"] = s.icon
-        payloads[_disc_topic(s.slug)] = p
+        payloads[_disc_topic(device_id, s.slug)] = p
     return payloads
 
 
@@ -123,14 +137,18 @@ class MQTTPublisher:
                  device_name: str = "Superb Fuel", version: str = "0.0.0") -> None:
         self._host = host
         self._port = port
+        # device_name/_DEVICE_ID zostają jako domyślne urządzenie dla publish()
+        # — cienki wrapper zgodności dla jedynego/aktywnego auta (0.10.0 i
+        # wcześniej). Multi-vehicle (0.11.0) idzie przez publish_for_vehicle().
         self._device_name = device_name
         self._version = version
         self._connected = False
-        # Ostatni znany stan — pierwsza publikacja po starcie zwykle
-        # wyprzedza connect (scheduler odpala tick natychmiast), więc
-        # stan czeka tu i wychodzi w _on_connect. Bez tego nowe sensory
-        # wisiały jako "unknown" do kolejnego ticku (15 min).
-        self._last_values: dict | None = None
+        # Ostatni znany stan per urządzenie (device_id -> values) — pierwsza
+        # publikacja po starcie zwykle wyprzedza connect (scheduler odpala
+        # tick natychmiast), więc stan czeka tu i wychodzi w _on_connect. Bez
+        # tego nowe sensory wisiały jako "unknown" do kolejnego ticku (15 min).
+        self._last_values: dict[str, dict] = {}
+        self._device_names: dict[str, str] = {}
 
         self._client = mqtt.Client(client_id=_DEVICE_ID, clean_session=True)
         if user:
@@ -152,15 +170,14 @@ class MQTTPublisher:
         if rc == 0:
             self._connected = True
             logger.info("MQTT połączone z %s:%d", self._host, self._port)
-            for topic, payload in discovery_payloads(
-                self._device_name, self._version
-            ).items():
-                client.publish(topic, json.dumps(payload), retain=True)
             client.publish(_AVAIL_TOPIC, "online", retain=True)
-            logger.info("MQTT discovery opublikowane (%d sensorów)", len(_SENSORS))
-            if self._last_values is not None:
-                self._publish_values(self._last_values)
-                logger.info("MQTT: opublikowano stan zaległy sprzed połączenia")
+            for device_id, values in self._last_values.items():
+                self._publish_discovery(device_id, self._device_names[device_id])
+                self._publish_values(device_id, values)
+            if self._last_values:
+                logger.info(
+                    "MQTT: opublikowano discovery + stan zaległy sprzed "
+                    "połączenia (%d urządzeń)", len(self._last_values))
         else:
             logger.error("MQTT connect nieudany (rc=%d)", rc)
 
@@ -170,13 +187,29 @@ class MQTTPublisher:
             logger.warning("MQTT rozłączone (rc=%d) — paho wznowi połączenie", rc)
 
     def publish(self, values: dict) -> None:
-        self._last_values = values
-        if not self._connected:
-            logger.debug("MQTT niepołączone — stan zapamiętany do on_connect")
-            return
-        self._publish_values(values)
+        """Wrapper zgodności — publikuje dla jedynego/aktywnego auta na
+        dzisiejszym stałym device_id, bez zmiany zachowania sprzed 0.11.0."""
+        self.publish_for_vehicle(_DEVICE_ID, self._device_name, values)
 
-    def _publish_values(self, values: dict) -> None:
+    def publish_for_vehicle(self, device_id: str, device_name: str,
+                            values: dict) -> None:
+        self._device_names[device_id] = device_name
+        self._last_values[device_id] = values
+        if not self._connected:
+            logger.debug("MQTT niepołączone — stan %s zapamiętany do on_connect",
+                        device_id)
+            return
+        self._publish_discovery(device_id, device_name)
+        self._publish_values(device_id, values)
+
+    def _publish_discovery(self, device_id: str, device_name: str) -> None:
+        for topic, payload in discovery_payloads(
+            device_id, device_name, self._version
+        ).items():
+            self._client.publish(topic, json.dumps(payload), retain=True)
+
+    def _publish_values(self, device_id: str, values: dict) -> None:
         for slug, payload in render_values(values).items():
-            self._client.publish(_state_topic(slug), payload, retain=True)
-        logger.debug("Opublikowano stan sensorów MQTT")
+            self._client.publish(
+                _state_topic(device_id, slug), payload, retain=True)
+        logger.debug("Opublikowano stan sensorów MQTT (%s)", device_id)

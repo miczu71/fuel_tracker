@@ -5,26 +5,33 @@ from fuel_tracker import settings as st
 
 def test_get_settings_returns_defaults_when_empty(conn):
     result = st.get_settings(conn)
-    assert result["monthly_fuel_budget"] == 0.0
     assert result["default_currency"] == "PLN"
     assert result["price_region"] == ""
-    assert result["odometer_entity"] == ""
+
+
+def test_ha_entities_and_budget_moved_to_vehicles_not_settings(conn):
+    """0.11.0: encje HA i budżet są teraz per pojazd (tabela vehicles),
+    nie globalne w settings — dwa auta nie mogą już dzielić jednego odometru."""
+    for key in ("odometer_entity", "fuel_level_entity", "location_entity",
+               "monthly_fuel_budget"):
+        assert key not in st.SETTINGS_TYPES
+        assert key not in st.DEFAULTS
 
 
 def test_seed_from_options_populates_missing_keys(conn):
     st.seed_from_options(conn, {
-        "monthly_fuel_budget": 984.0,
+        "alert_budget_threshold": 150.0,
         "price_region": "dolnośląskie",
     })
     result = st.get_settings(conn)
-    assert result["monthly_fuel_budget"] == 984.0
+    assert result["alert_budget_threshold"] == 150.0
     assert result["price_region"] == "dolnośląskie"
 
 
 def test_seed_does_not_overwrite_existing_value(conn):
-    st.set_settings(conn, {"monthly_fuel_budget": 500.0})
-    st.seed_from_options(conn, {"monthly_fuel_budget": 984.0})
-    assert st.get_settings(conn)["monthly_fuel_budget"] == 500.0
+    st.set_settings(conn, {"price_region": "śląskie"})
+    st.seed_from_options(conn, {"price_region": "dolnośląskie"})
+    assert st.get_settings(conn)["price_region"] == "śląskie"
 
 
 def test_set_settings_updates_value_on_repeated_calls(conn):

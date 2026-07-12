@@ -10,13 +10,14 @@ import sqlite3
 
 # Uwaga: przełączniki alertów jako int 0/1, nie bool — get_settings() typuje
 # konstruktorem, a bool("0") is True.
+#
+# 0.11.0: odometer_entity/fuel_level_entity/location_entity/monthly_fuel_budget
+# przeniesione do tabeli vehicles (per pojazd, migracja #9) — dwa auta nie
+# mogą już dzielić jednego odometru/budżetu. price_region i progi alertów
+# zostają globalne (świadome uproszczenie tego wydania — patrz plan 0.11.0).
 SETTINGS_TYPES: dict[str, type] = {
-    "monthly_fuel_budget": float,
     "default_currency": str,
     "price_region": str,
-    "odometer_entity": str,
-    "fuel_level_entity": str,
-    "location_entity": str,
     "notify_service": str,
     "alert_budget_enabled": int,
     "alert_cheap_fuel_enabled": int,
@@ -29,12 +30,8 @@ SETTINGS_TYPES: dict[str, type] = {
 
 # Progi domyślne odpowiadają dawnym automatyzacjom z fuel_tracker_package.yaml.
 DEFAULTS: dict[str, object] = {
-    "monthly_fuel_budget": 0.0,
     "default_currency": "PLN",
     "price_region": "",
-    "odometer_entity": "",
-    "fuel_level_entity": "",
-    "location_entity": "",
     "notify_service": "notify.mobile_app_op12",
     "alert_budget_enabled": 1,
     "alert_cheap_fuel_enabled": 1,

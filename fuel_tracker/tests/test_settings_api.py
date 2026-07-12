@@ -23,25 +23,24 @@ def client(tmp_path):
 
 def test_get_settings_returns_defaults(client):
     s = client.get("/api/settings").get_json()
-    assert s["monthly_fuel_budget"] == 0.0
     assert s["default_currency"] == "PLN"
     assert s["price_region"] == ""
 
 
 def test_put_settings_updates_and_persists(client):
-    r = client.put("/api/settings", json={
-        "monthly_fuel_budget": 984.0, "price_region": "dolnośląskie"})
+    r = client.put("/api/settings", json={"price_region": "dolnośląskie"})
     assert r.status_code == 200
     s = client.get("/api/settings").get_json()
-    assert s["monthly_fuel_budget"] == 984.0
     assert s["price_region"] == "dolnośląskie"
 
 
-def test_put_settings_takes_effect_without_restart(client):
-    """Budżet zmieniony przez /api/settings widoczny natychmiast w /api/summary."""
+def test_put_vehicle_budget_takes_effect_without_restart(client):
+    """0.11.0: budżet jest per pojazd (PUT /api/vehicles/<id>), nie globalny
+    w /api/settings — zmiana widoczna natychmiast w /api/summary."""
     before = client.get("/api/summary").get_json()
     assert before["monthly_budget"] == 0.0
-    client.put("/api/settings", json={"monthly_fuel_budget": 500.0})
+    client.put(f"/api/vehicles/{client.application.test_vehicle_id}",
+              json={"monthly_fuel_budget": 500.0})
     after = client.get("/api/summary").get_json()
     assert after["monthly_budget"] == 500.0
 

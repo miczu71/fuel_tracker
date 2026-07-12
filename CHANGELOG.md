@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.11.0
+
+- **Pełny multi-vehicle** — kilka aut z równoległymi, żywymi sensorami MQTT
+  naraz (dotąd: jedno aktywne auto, historia poprzednich zachowana bez
+  publikacji). Przełącznik pojazdu w navbarze na każdej stronie (`<select>`
+  zasilany z `GET /api/vehicles`, zapamiętywany w `localStorage` i
+  odzwierciedlony w URL jako `?vehicle_id=`).
+- **Entity_id bez zmian dla dotychczasowego auta** — aktywny pojazd zostaje
+  na dzisiejszym stałym prefiksie urządzenia MQTT (`fuel_tracker`,
+  `sensor.superb_fuel_*`) — zero migracji `template.yaml`/utility_meter/
+  dashboardu. Każde KOLEJNE dodane auto dostaje własny, odrębny prefiks
+  urządzenia (`fuel_tracker_<id>`) z własnym kompletem sensorów.
+- **Budżet i encje HA są teraz per pojazd** — miesięczny budżet paliwowy,
+  encja odometru, poziomu paliwa i lokalizacji telefonu przeniesione z
+  globalnych Ustawień do formularza każdego pojazdu (karta „Pojazdy").
+  Migracja automatycznie kopiuje dzisiejsze globalne wartości do
+  istniejącego pojazdu przy aktualizacji. `price_region` i progi/włączniki
+  alertów zostają globalne (świadome uproszczenie — jedna karta
+  Powiadomień, nie N kart).
+- **Prefill i statystyki czytają encje PRZEGLĄDANEGO auta** — naprawiony
+  realny błąd: dotąd przeglądanie danych auta B i tak czytało GPS/odometr
+  auta A (aktywnego). Formularz tankowania, prefill i strona Statystyki
+  używają teraz encji HA właściwego, przeglądanego pojazdu.
+- **Powiadomienia rozdzielone per pojazd** — stan anty-flap (`alert_state`)
+  ma teraz klucz `(alert, vehicle_id)` zamiast samego `alert` — dwa auta
+  z tym samym progiem przekroczonym w tym samym momencie dostają osobne,
+  niezależne powiadomienia zamiast dzielić jeden stan.
+- **Bramka weryfikacji z Drivvo zostaje przypięta do aktywnego auta** —
+  `GET /api/verify` świadomie ignoruje `?vehicle_id=`: nowo dodane auto
+  nie ma z czym się porównywać względem starych sensorów Drivvo.
+- **Eksport/import pełnej kopii JSON zostaje całobazowy** (bez pojęcia
+  „przeglądanego auta") — tylko eksport/import Fuelio CSV (zawsze per auto)
+  przechodzi z aktywnego na przeglądane auto.
+- Migracje **#8** (`alert_state` → `PRIMARY KEY(alert, vehicle_id)`,
+  backfill do aktywnego/pierwszego nie-zarchiwizowanego pojazdu) i **#9**
+  (`vehicles` += `odometer_entity`/`fuel_level_entity`/`location_entity`/
+  `monthly_fuel_budget`, backfill z dawnych globalnych ustawień, które
+  są potem usuwane).
+- Popup „samochod" w Lovelace (i cały dashboard HA) **pozostaje bez zmian**
+  — obsługuje tylko aktywne auto na dzisiejszych entity_id, zgodnie ze
+  świadomą decyzją zakresu tego wydania.
+- 21 nowych/rozszerzonych testów w tym nowy `tests/test_multi_vehicle_web.py`
+  (przełącznik widoku faktycznie scope'uje dane, 400 przy jawnie złym
+  `vehicle_id`, cichy fallback na aktywne przy braku parametru, dowód
+  naprawy buga prefill, dowód że `/api/verify` ignoruje parametr) —
+  222/222 zielone, w tym pełny regres istniejących testów bez zmian
+  zachowania poza mechanicznymi aktualizacjami sygnatur.
+
 ## 0.10.0
 
 - **Kopia zapasowa w UI** — nowy moduł `backup.py`. Nocny backup (03:15,

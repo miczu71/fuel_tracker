@@ -100,11 +100,25 @@ sensory MQTT discovery i mobilny web UI po polsku przez ingress.
   na ekran główny telefonu, otwierający od razu formularz tankowania.
   Bez service workera — instalacja tylko przez natywne „Dodaj do ekranu
   głównego", nie przez kryteria instalowalności przeglądarki.
+- **Pełny multi-vehicle (od 0.11.0)** — przełącznik pojazdu w navbarze na
+  każdej stronie; kilka aut z równoległymi, żywymi sensorami MQTT naraz
+  (nie tylko jedno aktywne). Dotychczasowe auto zostaje na dzisiejszym
+  entity_id (zero migracji), każde kolejne dostaje własne urządzenie MQTT.
+  Budżet i encje HA (odometr/poziom paliwa/lokalizacja) są teraz polem
+  każdego pojazdu — formularz „Pojazdy" w Ustawieniach. Prefill i
+  Statystyki czytają encje przeglądanego (nie tylko aktywnego) auta.
 
 ## Encje (MQTT discovery)
 
 Urządzenie: nazwa z opcji `vehicle_name` + „Fuel” (domyślnie **Superb Fuel**),
 `identifiers: ["fuel_tracker"]`. Publikacja co 15 min oraz po każdej zmianie danych.
+
+> **Od 0.11.0 — multi-vehicle:** powyższe dotyczy **dotychczasowego/aktywnego**
+> pojazdu — jego `entity_id` nie zmieniają się (zero migracji). Każde
+> KOLEJNE dodane auto dostaje własne, odrębne urządzenie MQTT
+> `identifiers: ["fuel_tracker_<id>"]` z tym samym kompletem sensorów pod
+> `sensor.<nazwa_urządzenia>_*` (realny `entity_id` zależy od nazwy nowego
+> pojazdu — zweryfikuj w **Narzędzia deweloperskie → Stany** po dodaniu).
 
 | Encja | Jednostka | Opis |
 |---|---|---|
@@ -197,6 +211,13 @@ powyższe sensory wystarczą jako dane wejściowe.
 > Instalacje z ≤0.8.x mogą mieć zaseedowany stary format `notify/family` —
 > zapis ukośnikowy jest normalizowany do kropkowego, ale zweryfikuj usługę
 > w Ustawieniach po aktualizacji.
+>
+> **Od 0.11.0:** `monthly_fuel_budget`/`odometer_entity`/`fuel_level_entity`/
+> `location_entity` zasiewają wyłącznie **pierwszy** pojazd przy świeżej
+> instalacji — edycja przeniesiona z globalnych Ustawień do formularza
+> każdego pojazdu (karta „Pojazdy"). Przy aktualizacji z ≤0.10.x te
+> wartości są automatycznie kopiowane z globalnych ustawień do
+> istniejącego pojazdu (migracja #9).
 
 | Opcja | Domyślnie | Opis |
 |---|---|---|
@@ -229,7 +250,8 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 `GET /api/statistics` · `GET /api/report.csv` · `POST /api/import/csv` ·
 `POST /api/import/drivvo` · `GET /api/verify` · `GET /api/export/fuelio.csv` ·
 `GET|PUT /api/settings` · `GET /api/ha-services` ·
-`GET /api/vehicles` · `POST /api/vehicles` (od 0.9.0 także pola leasingu) ·
+`GET /api/vehicles` · `POST /api/vehicles` (od 0.9.0 także pola leasingu,
+od 0.11.0 też budżet i encje HA) ·
 `GET|PUT|DELETE /api/vehicles/<id>` ·
 `POST /api/vehicles/<id>/activate` · `POST /api/vehicles/<id>/archive` ·
 `POST /api/vehicles/<id>/unarchive` · `GET /api/health` ·
@@ -237,10 +259,18 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 `POST /api/backup/restore/upload` · `GET /api/backup/export.json` ·
 `POST /api/backup/import.json` · `GET /manifest.webmanifest`
 
+> **Od 0.11.0:** endpointy danych pojazdu (`fillups`, `expenses`, `prefill`,
+> `summary`, `map-data`, `statistics`, `report.csv`, `export/fuelio.csv`,
+> `import/csv`, `import/drivvo`, `receipts/parse`) przyjmują opcjonalny
+> query param `?vehicle_id=<id>`. Odczyty: brak/nieprawidłowy parametr
+> cicho spada na aktywne auto. Zapisy: parametr jawnie podany, ale
+> nieprawidłowy/zarchiwizowany → `400`; parametr całkowicie pominięty →
+> cichy fallback na aktywne (kompatybilność wsteczna). `GET /api/verify`
+> ignoruje ten parametr — zawsze dotyczy aktywnego auta.
+
 ## Plan rozwoju
 
-- **0.11.0** — pełny multi-vehicle (kilka aut z równoległymi sensorami
-  MQTT, przełącznik widoku na każdej stronie UI).
+Brak zaplanowanych funkcji — kolejne wydania według potrzeb.
 
 ## Rozwój
 

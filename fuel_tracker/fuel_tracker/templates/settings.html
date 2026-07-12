@@ -25,6 +25,14 @@
       <input type="number" step="1" min="0" id="veh-lease-limit"></label>
     <label>Rata miesięczna (PLN)
       <input type="number" step="0.01" min="0" id="veh-lease-rate"></label>
+    <label>Miesięczny budżet paliwowy (PLN)
+      <input type="number" step="0.01" min="0" id="veh-budget"></label>
+    <label>Odometr (prefill formularza)
+      <input type="text" id="veh-odometer" placeholder="sensor...."></label>
+    <label>Poziom paliwa
+      <input type="text" id="veh-fuel-level" placeholder="sensor...."></label>
+    <label>Lokalizacja telefonu (dopasowanie stacji)
+      <input type="text" id="veh-location" placeholder="device_tracker...."></label>
     <div class="form-actions">
       <button type="submit" class="btn primary">Zapisz</button>
       <button type="button" class="btn" id="veh-cancel">Anuluj</button>
@@ -33,10 +41,8 @@
 </div>
 
 <div class="card">
-  <div class="card-title">Budżet</div>
+  <div class="card-title">Waluta</div>
   <form class="form" id="budget-form">
-    <label>Miesięczny budżet paliwowy (PLN)
-      <input type="number" step="0.01" min="0" id="set-budget" required></label>
     <label>Domyślna waluta tankowań
       <input type="text" id="set-currency" maxlength="3" required></label>
     <button type="submit" class="btn primary">Zapisz</button>
@@ -80,19 +86,6 @@
       <label>Próg ostrzeżenia (km)
         <input type="number" step="100" min="0" id="alert-lease-km"></label>
     </div>
-    <button type="submit" class="btn primary">Zapisz</button>
-  </form>
-</div>
-
-<div class="card">
-  <div class="card-title">Encje Home Assistant</div>
-  <form class="form" id="entities-form">
-    <label>Odometr (prefill formularza)
-      <input type="text" id="set-odometer" placeholder="sensor...."></label>
-    <label>Poziom paliwa
-      <input type="text" id="set-fuel-level" placeholder="sensor...."></label>
-    <label>Lokalizacja telefonu (dopasowanie stacji)
-      <input type="text" id="set-location" placeholder="device_tracker...."></label>
     <button type="submit" class="btn primary">Zapisz</button>
   </form>
 </div>
@@ -162,7 +155,7 @@
 
 <div class="card">
   <div class="card-title">Eksport</div>
-  <a class="btn" href="api/export/fuelio.csv">Pobierz Fuelio CSV</a>
+  <a class="btn" href="api/export/fuelio.csv?vehicle_id={{ vehicle_id }}">Pobierz Fuelio CSV</a>
 </div>
 {% endblock %}
 {% block scripts %}<script>FT.initSettings();</script>{% endblock %}

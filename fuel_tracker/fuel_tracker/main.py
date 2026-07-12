@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from . import __version__, backup, csv_fuelio, db as dbm, ha_client, notifications
 from . import prices, queries
 from . import settings as settingsm
-from .publisher import MQTTPublisher
+from .publisher import MQTTPublisher, device_id_for_vehicle
 from .web import create_app
 
 logger = logging.getLogger("fuel_tracker")
@@ -69,21 +69,30 @@ def main() -> None:
 
     conn = dbm.get_conn(db_path)
     dbm.migrate(conn)
-    dbm.ensure_vehicle(conn, vehicle_name, tank_capacity, default_fuel)
+    # Encje HA i budżet są teraz per pojazd (0.11.0, migracja #9) — opcje
+    # Supervisora zasilają tylko JEDYNY pojazd świeżej instalacji; przy
+    # upgrade'zie te wartości już siedzą w bazie (backfill migracji), więc
+    # ensure_vehicle() i tak zwraca istniejący pojazd bez ich nadpisania.
+    dbm.ensure_vehicle(
+        conn, vehicle_name, tank_capacity, default_fuel,
+        odometer_entity=_env("ODOMETER_ENTITY") or None,
+        fuel_level_entity=_env("FUEL_LEVEL_ENTITY") or None,
+        location_entity=_env("LOCATION_ENTITY") or None,
+        monthly_fuel_budget=budget)
     settingsm.seed_from_options(conn, {
-        "monthly_fuel_budget": budget,
         "price_region": price_region,
-        "odometer_entity": _env("ODOMETER_ENTITY"),
-        "fuel_level_entity": _env("FUEL_LEVEL_ENTITY"),
-        "location_entity": _env("LOCATION_ENTITY"),
         "notify_service": _env("NOTIFY_SERVICE"),
     })
     # Pojazdy: cykl życia (0.8.0) — aktywny pojazd żyje w settings, nie jest
     # już zamrożony na jednym id; startowa rozdzielczość tylko dla
     # jednorazowego auto-importu CSV przy starcie (aplikacja jeszcze nie
-    # przyjmuje żądań, więc nie ma czego przełączać).
+    # przyjmuje żądań, więc nie ma czego przełączać) i nazwy urządzenia MQTT
+    # domyślnego (thin wrapper publish() — pętla multi-vehicle poniżej i tak
+    # woła publish_for_vehicle() z właściwą nazwą każdego auta).
     active_id = dbm.resolve_active_vehicle_id(
         conn, int(settingsm.get_settings(conn).get("active_vehicle_id") or 0))
+    active_vehicle = dbm.get_vehicle(conn, active_id) if active_id else None
+    active_vehicle_name = active_vehicle["name"] if active_vehicle else vehicle_name
     conn.close()
 
     auto_import_share(db_path, active_id, share_dir, default_fuel)
@@ -106,13 +115,13 @@ def main() -> None:
         port=mqtt_port,
         user=mqtt_user,
         password=mqtt_password,
-        device_name="Superb Fuel",
+        device_name=active_vehicle_name,
         version=__version__,
     )
     mqtt_pub.connect()
 
-    def _current_odometer(s: dict) -> int | None:
-        entity = s.get("odometer_entity")
+    def _current_odometer(vehicle: dict) -> int | None:
+        entity = vehicle.get("odometer_entity")
         if not entity:
             return None
         data = ha_client.get_state(entity)
@@ -122,28 +131,41 @@ def main() -> None:
             return None
 
     def publish_sensors() -> None:
+        """Pełny multi-vehicle (0.11.0): publikuje sensory MQTT i ewaluuje
+        alerty dla KAŻDEGO nie-zarchiwizowanego pojazdu, nie tylko aktywnego.
+        Błąd jednego auta (np. martwa encja HA) nie może zablokować reszty —
+        stąd try/except w pętli, a nie wokół całej funkcji."""
         c = dbm.get_conn(db_path)
         try:
             s = settingsm.get_settings(c)
-            vid = dbm.resolve_active_vehicle_id(
+            active_id = dbm.resolve_active_vehicle_id(
                 c, int(s.get("active_vehicle_id") or 0))
-            vehicle = dbm.get_vehicle(c, vid)
-            values = queries.sensor_values(
-                c, vid, s["monthly_fuel_budget"],
-                fuel_type=vehicle["fuel_type"],
-                price_region=s["price_region"],
-                tank_capacity_l=vehicle["tank_capacity_l"],
-                lease_km_limit=vehicle["lease_km_limit"],
-                lease_start=vehicle["lease_start"],
-                lease_end=vehicle["lease_end"],
-                current_odometer=_current_odometer(s))
-            mqtt_pub.publish(values)
-            try:
-                # Alerty liczone z tych samych wartości co sensory MQTT;
-                # błąd powiadomień nie może zepsuć publikacji.
-                notifications.evaluate(c, s, values, ha_client.notify)
-            except Exception:
-                logger.exception("Ewaluacja alertów nieudana")
+            for vehicle in dbm.list_vehicles(c, include_archived=False):
+                try:
+                    values = queries.sensor_values(
+                        c, vehicle["id"], vehicle["monthly_fuel_budget"],
+                        fuel_type=vehicle["fuel_type"],
+                        price_region=s["price_region"],
+                        tank_capacity_l=vehicle["tank_capacity_l"],
+                        lease_km_limit=vehicle["lease_km_limit"],
+                        lease_start=vehicle["lease_start"],
+                        lease_end=vehicle["lease_end"],
+                        current_odometer=_current_odometer(vehicle))
+                    device_id = device_id_for_vehicle(vehicle["id"], active_id)
+                    mqtt_pub.publish_for_vehicle(device_id, vehicle["name"], values)
+                except Exception:
+                    logger.exception(
+                        "Publikacja MQTT nieudana dla pojazdu %s", vehicle["id"])
+                    continue
+                try:
+                    # Alerty liczone z tych samych wartości co sensory MQTT;
+                    # błąd powiadomień nie może zepsuć publikacji tego auta
+                    # ani przerwać pętli po pozostałych pojazdach.
+                    notifications.evaluate(c, s, values, vehicle["id"],
+                                          ha_client.notify)
+                except Exception:
+                    logger.exception(
+                        "Ewaluacja alertów nieudana dla pojazdu %s", vehicle["id"])
         except Exception:
             logger.exception("Publikacja MQTT nieudana")
         finally:

@@ -16,8 +16,8 @@ def client(tmp_path):
     db_path = str(tmp_path / "web.db")
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
-    dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
-    settingsm.set_settings(c, {"monthly_fuel_budget": 984.0,
+    vid = dbm.ensure_vehicle(c, "Testowy", 66.0, "PB95")
+    dbm.update_vehicle(c, vid, {"monthly_fuel_budget": 984.0,
                                "odometer_entity": "sensor.odo"})
     c.close()
     app = create_app(
@@ -173,10 +173,10 @@ def test_prefill_matches_station_by_gps(tmp_path):
     db_path = str(tmp_path / "gps.db")
     c = dbm.get_conn(db_path)
     dbm.migrate(c)
-    dbm.ensure_vehicle(c, "T", 66.0, "PB95")
+    vid = dbm.ensure_vehicle(c, "T", 66.0, "PB95")
     c.execute("INSERT INTO stations (name, latitude, longitude) "
               "VALUES ('Orlen Legnicka', 51.1152, 16.9812)")
-    settingsm.set_settings(c, {"odometer_entity": "sensor.odo",
+    dbm.update_vehicle(c, vid, {"odometer_entity": "sensor.odo",
                                "location_entity": "device_tracker.op12"})
     c.commit()
     c.close()

@@ -28,6 +28,52 @@ window.FT = (function () {
     return data;
   }
 
+  // ── Przełącznik pojazdu (0.11.0) ────────────────────────────────────────
+  // Auto aktualnie przeglądane żyje w query stringu (?vehicle_id=), bo nie
+  // ma sesji Flask — withVehicle() dopisuje go do fetch-y DANYCH POJAZDU
+  // (tankowania/wydatki/paragony/importy). NIE używać dla api/vehicles*,
+  // api/settings, api/categories — te są globalne.
+  function vehicleId() {
+    return document.body.dataset.vehicleId || "";
+  }
+
+  function withVehicle(url) {
+    const vid = vehicleId();
+    if (!vid) return url;
+    return url + (url.includes("?") ? "&" : "?") + "vehicle_id=" + vid;
+  }
+
+  async function initVehicleSwitcher() {
+    const sw = document.getElementById("vehicle-switcher");
+    if (!sw) return;
+    const vid = vehicleId();
+    const params = new URLSearchParams(window.location.search);
+    const stored = localStorage.getItem("ftVehicleId");
+    // Brak ?vehicle_id= w URL, ale localStorage pamięta inne auto niż to,
+    // które serwer właśnie wyrenderował (aktywne) — dociągnij zapamiętane.
+    if (!params.has("vehicle_id") && stored && stored !== vid) {
+      params.set("vehicle_id", stored);
+      window.location.search = params.toString();
+      return;
+    }
+    if (vid) localStorage.setItem("ftVehicleId", vid);
+
+    let vehicles = [];
+    try {
+      vehicles = (await getJSON("api/vehicles")).filter((v) => !v.archived);
+    } catch (e) { return; }
+    sw.innerHTML = vehicles.map((v) =>
+      `<option value="${v.id}" ${String(v.id) === vid ? "selected" : ""}>` +
+      `${v.name}${v.active ? " (aktywny)" : ""}</option>`).join("");
+
+    sw.addEventListener("change", () => {
+      localStorage.setItem("ftVehicleId", sw.value);
+      const p = new URLSearchParams(window.location.search);
+      p.set("vehicle_id", sw.value);
+      window.location.search = p.toString();
+    });
+  }
+
   function baseChartOpts() {
     Chart.defaults.font.family =
       'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -71,7 +117,7 @@ window.FT = (function () {
 
   // ── Pulpit ──────────────────────────────────────────────────────────────
   async function initDashboard() {
-    const s = await getJSON("api/summary");
+    const s = await getJSON(withVehicle("api/summary"));
     const set = (id, v, d) => (document.getElementById(id).textContent = fmt(v, d));
     set("s-avg", s.avg_consumption); set("s-last", s.last_consumption);
     set("s-costkm", s.cost_per_km); set("s-total", s.total_cost, 0);
@@ -140,7 +186,7 @@ window.FT = (function () {
 
   // ── Tankowania ──────────────────────────────────────────────────────────
   async function initFillups(base) {
-    const rows = await getJSON("api/fillups");
+    const rows = await getJSON(withVehicle("api/fillups"));
     const tbody = document.querySelector("#fillups-table tbody");
     tbody.innerHTML = "";
     for (const f of rows) {
@@ -156,7 +202,7 @@ window.FT = (function () {
         <td>${f.station || ""}</td>
         <td>
           ${f.attachment_id ? `<a class="btn" title="Paragon" href="api/attachments/${f.attachment_id}" target="_blank">📷</a>` : ""}
-          <a class="btn" href="${base}/fillup-form?id=${f.id}">Edytuj</a>
+          <a class="btn" href="${withVehicle(base + "/fillup-form?id=" + f.id)}">Edytuj</a>
           <button class="btn danger" data-del="${f.id}">Usuń</button>
         </td>`;
       tbody.appendChild(tr);
@@ -165,7 +211,7 @@ window.FT = (function () {
       const id = e.target.dataset && e.target.dataset.del;
       if (!id) return;
       if (!confirm("Usunąć ten wpis?")) return;
-      await fetch(`api/fillups/${id}`, { method: "DELETE" });
+      await fetch(withVehicle(`api/fillups/${id}`), { method: "DELETE" });
       initFillups(base);
     });
   }
@@ -233,7 +279,8 @@ window.FT = (function () {
       const fd = new FormData();
       fd.append("file", file);
       try {
-        const r = await fetch("api/receipts/parse", { method: "POST", body: fd });
+        const r = await fetch(withVehicle("api/receipts/parse"),
+          { method: "POST", body: fd });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) {
           // Zdjęcie mogło się zapisać mimo błędnej analizy — podpinamy je.
@@ -273,7 +320,7 @@ window.FT = (function () {
 
     if (editId) {
       document.getElementById("form-title").textContent = "Edycja tankowania";
-      const f = await getJSON(`api/fillups/${editId}`);
+      const f = await getJSON(withVehicle(`api/fillups/${editId}`));
       form.date.value = f.date.replace(" ", "T");
       form.odometer.value = f.odometer;
       // Wpis zagraniczny edytujemy w walucie oryginalnej.
@@ -292,7 +339,7 @@ window.FT = (function () {
       form.latitude.value = f.latitude ?? "";
       form.longitude.value = f.longitude ?? "";
     } else {
-      const pre = await getJSON("api/prefill");
+      const pre = await getJSON(withVehicle("api/prefill"));
       form.date.value = pre.date;
       if (pre.odometer) {
         form.odometer.value = pre.odometer;
@@ -350,14 +397,14 @@ window.FT = (function () {
         attachment_id: attachmentId,
       };
       try {
-        if (editId) await sendJSON(`api/fillups/${editId}`, "PUT", body);
-        else await sendJSON("api/fillups", "POST", body);
+        if (editId) await sendJSON(withVehicle(`api/fillups/${editId}`), "PUT", body);
+        else await sendJSON(withVehicle("api/fillups"), "POST", body);
         // Paragon mieszany: pozycje niepaliwowe → wydatek "Płyny"
         // (jedno zdjęcie tworzy dwa wpisy, oba zaakceptowane świadomie).
         if (receiptExtras && document.getElementById("extras-check").checked) {
           const cats = await getJSON("api/categories");
           const fluids = cats.find((c) => c.name === "Płyny");
-          await sendJSON("api/expenses", "POST", {
+          await sendJSON(withVehicle("api/expenses"), "POST", {
             date: form.date.value,
             odometer: form.odometer.value,
             category_id: fluids ? fluids.id : null,
@@ -367,7 +414,7 @@ window.FT = (function () {
             attachment_id: attachmentId,
           });
         }
-        window.location.href = `${base}/fillups`;
+        window.location.href = withVehicle(`${base}/fillups`);
       } catch (ex) {
         err.textContent = ex.message;
         err.hidden = false;
@@ -378,7 +425,7 @@ window.FT = (function () {
   // ── Wydatki ─────────────────────────────────────────────────────────────
   async function initExpenses() {
     const [cats, rows] = await Promise.all([
-      getJSON("api/categories"), getJSON("api/expenses"),
+      getJSON("api/categories"), getJSON(withVehicle("api/expenses")),
     ]);
     const sel = document.getElementById("category-select");
     sel.innerHTML = cats.filter((c) => !c.hidden)
@@ -421,7 +468,7 @@ window.FT = (function () {
         </tr>`).join("");
     };
 
-    const reload = async () => render(await getJSON("api/expenses"));
+    const reload = async () => render(await getJSON(withVehicle("api/expenses")));
     render(rows);
     form.date.value = new Date().toISOString().slice(0, 16);
 
@@ -429,7 +476,7 @@ window.FT = (function () {
       const ds = ev.target.dataset || {};
       if (ds.del) {
         if (!confirm("Usunąć wydatek?")) return;
-        await fetch(`api/expenses/${ds.del}`, { method: "DELETE" });
+        await fetch(withVehicle(`api/expenses/${ds.del}`), { method: "DELETE" });
         if (editId === ds.del) resetForm();
         reload();
       } else if (ds.edit) {
@@ -465,8 +512,8 @@ window.FT = (function () {
         description: form.description.value,
       };
       try {
-        if (editId) await sendJSON(`api/expenses/${editId}`, "PUT", body);
-        else await sendJSON("api/expenses", "POST", body);
+        if (editId) await sendJSON(withVehicle(`api/expenses/${editId}`), "PUT", body);
+        else await sendJSON(withVehicle("api/expenses"), "POST", body);
         resetForm();
         reload();
       } catch (ex) {
@@ -478,7 +525,7 @@ window.FT = (function () {
 
   // ── Mapa tankowań ───────────────────────────────────────────────────────
   async function initMap() {
-    const data = (await getJSON("api/map-data"))
+    const data = (await getJSON(withVehicle("api/map-data")))
       .filter((s) => s.latitude != null && s.longitude != null);
     const el = document.getElementById("map");
     if (!data.length) {
@@ -516,7 +563,7 @@ window.FT = (function () {
 
   // ── Statystyki ──────────────────────────────────────────────────────────
   async function initStatistics() {
-    const s = await getJSON("api/statistics");
+    const s = await getJSON(withVehicle("api/statistics"));
     const set = (id, v, d) =>
       (document.getElementById(id).textContent = v == null ? "–" : fmt(v, d));
     set("st-range", s.estimated_range_km, 0);
@@ -642,6 +689,14 @@ window.FT = (function () {
         v && v.lease_km_limit != null ? v.lease_km_limit : "";
       document.getElementById("veh-lease-rate").value =
         v && v.monthly_rate != null ? v.monthly_rate : "";
+      document.getElementById("veh-budget").value =
+        v && v.monthly_fuel_budget != null ? v.monthly_fuel_budget : "";
+      document.getElementById("veh-odometer").value =
+        (v && v.odometer_entity) || "";
+      document.getElementById("veh-fuel-level").value =
+        (v && v.fuel_level_entity) || "";
+      document.getElementById("veh-location").value =
+        (v && v.location_entity) || "";
       vehicleForm.hidden = false;
       vehicleForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
       document.getElementById("veh-name").focus();
@@ -669,6 +724,12 @@ window.FT = (function () {
         lease_end: document.getElementById("veh-lease-end").value || null,
         lease_km_limit: limit ? parseInt(limit, 10) : null,
         monthly_rate: rate ? parseFloat(rate) : null,
+        monthly_fuel_budget: parseFloat(
+          document.getElementById("veh-budget").value) || 0,
+        odometer_entity: document.getElementById("veh-odometer").value.trim(),
+        fuel_level_entity:
+          document.getElementById("veh-fuel-level").value.trim(),
+        location_entity: document.getElementById("veh-location").value.trim(),
       };
       const r = await fetch(id ? `api/vehicles/${id}` : "api/vehicles", {
         method: id ? "PUT" : "POST",
@@ -825,12 +886,8 @@ window.FT = (function () {
 
     async function loadSettingsForms() {
       const s = await getJSON("api/settings");
-      document.getElementById("set-budget").value = s.monthly_fuel_budget;
       document.getElementById("set-currency").value = s.default_currency;
       document.getElementById("set-region").value = s.price_region;
-      document.getElementById("set-odometer").value = s.odometer_entity;
-      document.getElementById("set-fuel-level").value = s.fuel_level_entity;
-      document.getElementById("set-location").value = s.location_entity;
       document.getElementById("alert-budget-on").checked =
         !!s.alert_budget_enabled;
       document.getElementById("alert-budget-threshold").value =
@@ -872,8 +929,6 @@ window.FT = (function () {
       "submit", async (e) => {
         e.preventDefault();
         await sendJSON("api/settings", "PUT", {
-          monthly_fuel_budget:
-            parseFloat(document.getElementById("set-budget").value),
           default_currency:
             document.getElementById("set-currency").value.trim().toUpperCase(),
         });
@@ -887,17 +942,6 @@ window.FT = (function () {
         });
       });
 
-    document.getElementById("entities-form").addEventListener(
-      "submit", async (e) => {
-        e.preventDefault();
-        await sendJSON("api/settings", "PUT", {
-          odometer_entity: document.getElementById("set-odometer").value.trim(),
-          fuel_level_entity:
-            document.getElementById("set-fuel-level").value.trim(),
-          location_entity: document.getElementById("set-location").value.trim(),
-        });
-      });
-
     const csvForm = document.getElementById("csv-form");
     csvForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -905,7 +949,8 @@ window.FT = (function () {
       rep.hidden = false;
       rep.textContent = "Importuję…";
       const fd = new FormData(csvForm);
-      const r = await fetch("api/import/csv", { method: "POST", body: fd });
+      const r = await fetch(withVehicle("api/import/csv"),
+        { method: "POST", body: fd });
       rep.textContent = JSON.stringify(await r.json(), null, 2);
     });
 
@@ -913,7 +958,7 @@ window.FT = (function () {
       const rep = document.getElementById("drivvo-report");
       rep.hidden = false;
       rep.textContent = "Importuję z Drivvo…";
-      const r = await fetch("api/import/drivvo", {
+      const r = await fetch(withVehicle("api/import/drivvo"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -964,5 +1009,5 @@ window.FT = (function () {
   }
 
   return { initDashboard, initFillups, initFillupForm, initExpenses,
-           initSettings, initMap, initStatistics };
+           initSettings, initMap, initStatistics, initVehicleSwitcher };
 })();

@@ -109,26 +109,28 @@ def _messages(alert: str, state: str, values: dict) -> tuple[str, str]:
     return texts[(alert, state)]
 
 
-def _load_state(conn: sqlite3.Connection, alert: str) -> dict:
+def _load_state(conn: sqlite3.Connection, alert: str, vehicle_id: int) -> dict:
     row = conn.execute(
         "SELECT state, notified_state, notified_at FROM alert_state "
-        "WHERE alert = ?", (alert,)).fetchone()
+        "WHERE alert = ? AND vehicle_id = ?", (alert, vehicle_id)).fetchone()
     if row:
         return dict(row)
     return {"state": "ok", "notified_state": None, "notified_at": None}
 
 
-def _save_state(conn: sqlite3.Connection, alert: str, state: str,
-                now: datetime, notified: bool) -> None:
+def _save_state(conn: sqlite3.Connection, alert: str, vehicle_id: int,
+                state: str, now: datetime, notified: bool) -> None:
     conn.execute(
-        "INSERT INTO alert_state (alert, state, changed_at) VALUES (?, ?, ?) "
-        "ON CONFLICT(alert) DO UPDATE SET state = excluded.state, "
+        "INSERT INTO alert_state (alert, vehicle_id, state, changed_at) "
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(alert, vehicle_id) DO UPDATE SET state = excluded.state, "
         "changed_at = excluded.changed_at",
-        (alert, state, now.strftime(_TS)))
+        (alert, vehicle_id, state, now.strftime(_TS)))
     if notified:
         conn.execute(
             "UPDATE alert_state SET notified_state = ?, notified_at = ? "
-            "WHERE alert = ?", (state, now.strftime(_TS), alert))
+            "WHERE alert = ? AND vehicle_id = ?",
+            (state, now.strftime(_TS), alert, vehicle_id))
     conn.commit()
 
 
@@ -143,15 +145,19 @@ def _recently_notified(prev: dict, state: str, now: datetime) -> bool:
 
 
 def evaluate(conn: sqlite3.Connection, settings: dict, values: dict,
-             notify: Callable[[str, str, str], bool],
+             vehicle_id: int, notify: Callable[[str, str, str], bool],
              now: datetime | None = None) -> None:
-    """Przelicza stany alertów i wysyła powiadomienia przez usługę HA."""
+    """Przelicza stany alertów i wysyła powiadomienia przez usługę HA.
+
+    vehicle_id (0.11.0) rozdziela stan anty-flap per pojazd — dwa auta z
+    tym samym alertem w tym samym stanie nie dzielą już historii powiadomień.
+    """
     with _LOCK:
-        _evaluate(conn, settings, values, notify, now)
+        _evaluate(conn, settings, values, vehicle_id, notify, now)
 
 
 def _evaluate(conn: sqlite3.Connection, settings: dict, values: dict,
-              notify: Callable[[str, str, str], bool],
+              vehicle_id: int, notify: Callable[[str, str, str], bool],
               now: datetime | None = None) -> None:
     now = now or datetime.now()
     service = settingsm.normalize_notify_service(
@@ -165,7 +171,7 @@ def _evaluate(conn: sqlite3.Connection, settings: dict, values: dict,
         state = check(settings, values)
         if state is None:  # alert wyłączony albo brak danych wejściowych
             continue
-        prev = _load_state(conn, alert)
+        prev = _load_state(conn, alert, vehicle_id)
         if state == prev["state"]:
             continue
         escalated = _SEVERITY[state] > _SEVERITY[prev["state"]]
@@ -188,4 +194,4 @@ def _evaluate(conn: sqlite3.Connection, settings: dict, values: dict,
         else:
             logger.debug("Alert %s: %s -> %s bez powiadomienia", alert,
                          prev["state"], state)
-        _save_state(conn, alert, state, now, notified=sent)
+        _save_state(conn, alert, vehicle_id, state, now, notified=sent)

@@ -46,7 +46,13 @@ body {
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 10;
 }
-.nav-brand { font-weight: 700; margin-right: auto; }
+.nav-brand { font-weight: 700; }
+.nav-vehicle-switcher {
+  margin-right: auto; font-size: 12px; font-weight: 500;
+  color: var(--ink-2); background: var(--grid);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 8px;
+}
 .nav-links { display: flex; gap: 4px; }
 .nav-links a {
   color: var(--ink-2); text-decoration: none;
