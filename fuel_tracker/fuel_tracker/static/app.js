@@ -750,7 +750,7 @@ window.FT = (function () {
           <thead><tr><th>Nazwa</th><th>Paliwo</th>
           <th class="num">Bak (L)</th><th>Stan</th><th>Leasing</th><th></th></tr></thead>
           <tbody>${rows.map((v) => {
-            const badge = v.active ? '<span class="verify-ok">aktywny</span>'
+            const badge = v.active ? '<span class="badge-active">aktywny</span>'
               : v.archived ? '<span class="muted">zarchiwizowany</span>' : "";
             const lease = v.lease_km_limit
               ? `${fmt(v.lease_km_limit, 0)} km${v.lease_end ? " do " + v.lease_end : ""}`

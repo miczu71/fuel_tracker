@@ -764,7 +764,7 @@ def create_app(db_path: str, config: dict,
         changed()
         return jsonify(result)
 
-    # ── API: import / eksport / weryfikacja ───────────────────────────────
+    # ── API: import / eksport ──────────────────────────────────────────────
 
     @app.post("/api/import/csv")
     def api_import_csv():

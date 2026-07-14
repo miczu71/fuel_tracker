@@ -164,8 +164,7 @@ body {
   background: var(--page); border: 1px solid var(--grid);
   border-radius: 14px; padding: 4px 12px; font-size: 13px;
 }
-.verify-ok { color: var(--good); font-weight: 600; }
-.verify-bad { color: var(--critical); font-weight: 600; }
+.badge-active { color: var(--good); font-weight: 600; }
 
 /* ── Mapa tankowań (0.2.0) ── */
 .map { height: 65vh; min-height: 340px; border-radius: 10px; }
