@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.1
+
+- **Porządki po 0.12.0** — bez zmian funkcjonalnych:
+  - Usunięta martwa reguła CSS `.verify-bad` (jedyni konsumenci zniknęli
+    razem z kartą weryfikacji w 0.12.0).
+  - Klasa `.verify-ok` przemianowana na `.badge-active` — styluje wyłącznie
+    znacznik „aktywny" przy pojeździe, nazwa nie sugeruje już usuniętej
+    weryfikacji.
+  - Poprawiony komentarz sekcji API w `web.py` (bez „weryfikacji").
+
 ## 0.12.0
 
 - **Sanityzacja repo publicznego** — bez zmian funkcjonalnych w dzienniku,
