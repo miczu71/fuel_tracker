@@ -630,13 +630,72 @@ window.FT = (function () {
       options: kmOpts,
     });
 
-    document.getElementById("split-chips").innerHTML = [
-      ["Karta ORLEN Flota", s.split.fuel_card],
-      ["Paliwo prywatne", s.split.fuel_own],
-      ["Płyny", s.split.fluids],
-      ["Inne wydatki", s.split.other_expenses],
-    ].map(([n, v]) => `<span class="chip">${n}: <b>${fmt(v, 0)} PLN</b></span>`)
-      .join("");
+    // ── Koszt posiadania (TCO, 0.13.0) ─────────────────────────────────────
+    const tco = s.tco;
+    set("tco-per-km", tco.cost_per_km.total, 2);
+    set("tco-per-month", tco.cost_per_month, 0);
+    set("tco-per-100km", tco.cost_per_100km, 0);
+    document.getElementById("tco-period").textContent = tco.period_months
+      ? `Na podstawie ${fmt(tco.period_months, 1)} mies. historii ` +
+        `i ${fmt(tco.distance_km, 0)} km.`
+      : "Za mało historii, żeby wyliczyć okres.";
+
+    const tcoLabels = [], tcoValues = [], tcoColors = [];
+    const tcoSlice = (label, value, colorVar) => {
+      if (value > 0) {
+        tcoLabels.push(label); tcoValues.push(value); tcoColors.push(css(colorVar));
+      }
+    };
+    tcoSlice("Paliwo", tco.fuel_total, "--series-1");
+    tcoSlice("Płyny", tco.by_group.fluids, "--series-2");
+    tcoSlice("Serwis", tco.by_group.service, "--series-4");
+    tcoSlice("Ubezpieczenie", tco.by_group.insurance, "--series-5");
+    tcoSlice("Opłaty", tco.by_group.fees, "--series-6");
+    tcoSlice("Inne", tco.by_group.other, "--series-7");
+    if (tco.lease_total) tcoSlice("Rata leasingu", tco.lease_total, "--series-3");
+    new Chart(document.getElementById("chart-tco"), {
+      type: "doughnut",
+      data: { labels: tcoLabels, datasets: [{
+        data: tcoValues, backgroundColor: tcoColors,
+        borderColor: css("--surface"), borderWidth: 2,
+      }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: "bottom",
+            labels: { color: css("--muted") } },
+          tooltip: { callbacks: {
+            label: (ctx) => `${ctx.label}: ${fmt(ctx.parsed, 0)} PLN`,
+          } },
+        },
+      },
+    });
+
+    // ── Skumulowany koszt i koszt/km w czasie (na bazie monthly_report) ────
+    const months = [...s.monthly_report].reverse();  // rosnąco chronologicznie
+    let running = 0;
+    const cumulative = months.map((m) => {
+      running += m.fuel_card + m.fuel_own + m.fluids + m.other_expenses;
+      return Math.round(running * 100) / 100;
+    });
+    lineChart("chart-cumulative", months.map((m) => m.month), cumulative,
+      "--series-1", "Skumulowany koszt (PLN)");
+
+    const costPerKmSeries = months.map((m) => {
+      const total = m.fuel_card + m.fuel_own + m.fluids + m.other_expenses;
+      return m.km > 0 ? Math.round((total / m.km) * 100) / 100 : null;
+    });
+    const cpkOpts = baseChartOpts();
+    cpkOpts.spanGaps = true;
+    new Chart(document.getElementById("chart-cost-per-km"), {
+      type: "line",
+      data: { labels: months.map((m) => m.month), datasets: [{
+        label: "PLN/km", data: costPerKmSeries,
+        borderColor: css("--series-4"), backgroundColor: css("--series-4"),
+        borderWidth: 2, pointRadius: 2, tension: 0.25, spanGaps: true,
+      }] },
+      options: cpkOpts,
+    });
 
     const r = s.records;
     const seg = (x) => x
@@ -968,24 +1027,135 @@ window.FT = (function () {
       rep.textContent = JSON.stringify(await r.json(), null, 2);
     });
 
+    // ── Kategorie wydatków: CRUD + grupa TCO (0.13.0) ──────────────────────
+    const TCO_LABELS = { fluids: "Płyny", service: "Serwis",
+      insurance: "Ubezpieczenie", fees: "Opłaty", other: "Inne" };
     const catList = document.getElementById("category-list");
+    const catForm = document.getElementById("category-form");
+
+    function openCategoryForm(c) {
+      document.getElementById("category-form-title").textContent =
+        c ? `Edycja: ${c.name}` : "Nowa kategoria";
+      document.getElementById("cat-id").value = c ? c.id : "";
+      document.getElementById("cat-name").value = c ? c.name : "";
+      document.getElementById("cat-group").value = c ? c.tco_group : "other";
+      catForm.hidden = false;
+      catForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      document.getElementById("cat-name").focus();
+    }
+    function closeCategoryForm() { catForm.hidden = true; }
+
+    document.getElementById("category-add-btn").addEventListener(
+      "click", () => openCategoryForm(null));
+    document.getElementById("cat-cancel").addEventListener(
+      "click", closeCategoryForm);
+
     const renderCats = async () => {
       const cats = await getJSON("api/categories");
-      catList.innerHTML = cats.map((c) => `
-        <label class="chip check">
-          <input type="checkbox" data-cat="${c.id}" ${c.hidden ? "" : "checked"}>
-          ${c.name}
-        </label>`).join("");
+      catList.innerHTML = `
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Nazwa</th><th>Grupa TCO</th><th>Widoczna</th>
+          <th></th></tr></thead>
+          <tbody>${cats.map((c) => `
+            <tr>
+              <td>${c.name}</td>
+              <td>${TCO_LABELS[c.tco_group] || c.tco_group}</td>
+              <td><label class="check">
+                <input type="checkbox" data-vis="${c.id}" ${c.hidden ? "" : "checked"}>
+              </label></td>
+              <td>
+                <button type="button" class="btn small" data-edit="${c.id}">Edytuj</button>
+                <button type="button" class="btn small danger" data-del="${c.id}">Usuń</button>
+              </td>
+            </tr>`).join("")}</tbody>
+        </table></div>`;
+
+      catList.querySelectorAll("[data-vis]").forEach((el) =>
+        el.addEventListener("change", async () => {
+          await sendJSON(`api/categories/${el.dataset.vis}`, "PUT",
+            { hidden: !el.checked });
+        }));
+      catList.querySelectorAll("[data-edit]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          const c = cats.find((x) => String(x.id) === btn.dataset.edit);
+          if (c) openCategoryForm(c);
+        }));
+      catList.querySelectorAll("[data-del]").forEach((btn) =>
+        btn.addEventListener("click", async () => {
+          if (!confirm("Usunąć kategorię?")) return;
+          const r = await fetch(`api/categories/${btn.dataset.del}`,
+                                { method: "DELETE" });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) { alert(data.error || `HTTP ${r.status}`); return; }
+          renderCats();
+        }));
     };
     renderCats();
-    catList.addEventListener("change", async (e) => {
-      const id = e.target.dataset && e.target.dataset.cat;
-      if (!id) return;
-      await sendJSON(`api/categories/${id}`, "PUT",
-        { hidden: !e.target.checked });
+
+    catForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = document.getElementById("cat-id").value;
+      const payload = {
+        name: document.getElementById("cat-name").value.trim(),
+        tco_group: document.getElementById("cat-group").value,
+      };
+      const r = await fetch(id ? `api/categories/${id}` : "api/categories", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(data.error || `HTTP ${r.status}`); return; }
+      closeCategoryForm();
+      renderCats();
+    });
+  }
+
+  // ── Porównanie pojazdów (0.13.0) ────────────────────────────────────────
+  async function initCompare() {
+    const rows = await getJSON("api/compare");
+    const tbody = document.querySelector("#compare-table tbody");
+    tbody.innerHTML = rows.map((v) => `
+      <tr${v.active ? ' class="row-active"' : ""}>
+        <td>${v.name}${v.active ? ' <span class="badge-active">aktywny</span>' : ""}</td>
+        <td>${v.fuel_type}</td>
+        <td class="num">${v.fillup_count}</td>
+        <td class="num">${v.avg_consumption != null ? fmt(v.avg_consumption) : "–"}</td>
+        <td class="num">${v.tco.cost_per_km.total != null ? fmt(v.tco.cost_per_km.total, 2) : "–"}</td>
+        <td class="num">${v.avg_price_per_l != null ? fmt(v.avg_price_per_l) : "–"}</td>
+        <td class="num">${v.monthly_km != null ? fmt(v.monthly_km, 0) : "–"}</td>
+        <td class="num">${fmt(v.expenses_total, 0)}</td>
+      </tr>`).join("") ||
+      '<tr><td colspan="8" class="muted">Brak pojazdów</td></tr>';
+
+    const names = rows.map((v) => v.name);
+
+    const consOpts = baseChartOpts();
+    consOpts.scales.y.beginAtZero = true;
+    new Chart(document.getElementById("chart-compare-consumption"), {
+      type: "bar",
+      data: { labels: names, datasets: [{
+        label: "L/100km", data: rows.map((v) => v.avg_consumption),
+        backgroundColor: css("--series-1"),
+        borderColor: css("--surface"), borderWidth: 1, borderRadius: 3,
+      }] },
+      options: consOpts,
+    });
+
+    const tcoOpts = baseChartOpts();
+    tcoOpts.scales.y.beginAtZero = true;
+    new Chart(document.getElementById("chart-compare-tco"), {
+      type: "bar",
+      data: { labels: names, datasets: [{
+        label: "PLN/km", data: rows.map((v) => v.tco.cost_per_km.total),
+        backgroundColor: css("--series-4"),
+        borderColor: css("--surface"), borderWidth: 1, borderRadius: 3,
+      }] },
+      options: tcoOpts,
     });
   }
 
   return { initDashboard, initFillups, initFillupForm, initExpenses,
-           initSettings, initMap, initStatistics, initVehicleSwitcher };
+           initSettings, initMap, initStatistics, initVehicleSwitcher,
+           initCompare };
 })();

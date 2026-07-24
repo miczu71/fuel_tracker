@@ -74,6 +74,28 @@ def test_statistics_empty_db(client):
     assert s["estimated_range_km"] is None
 
 
+def test_statistics_tco_block(client):
+    _seed(client)
+    assert client.put("/api/vehicles/1",
+                      json={"monthly_rate": 500.0}).status_code == 200
+    tco = client.get("/api/statistics").get_json()["tco"]
+    assert tco["fuel_total"] == round(40 * 6.20 + 42 * 6.00 + 41 * 5.80, 2)
+    assert tco["expenses_total"] == 165.0  # 45 (Płyny) + 120 (Myjnia)
+    assert tco["by_group"]["fluids"] == 45.0
+    assert tco["by_group"]["fees"] == 120.0  # Myjnia -> grupa "fees"
+    assert tco["lease_total"] is not None  # rata × miesiące rozpiętości dat
+    assert tco["cost_per_km"]["total"] is not None
+    assert tco["cost_per_100km"] is not None
+
+
+def test_statistics_tco_empty_db_safe_defaults(client):
+    tco = client.get("/api/statistics").get_json()["tco"]
+    assert tco["period_months"] is None
+    assert tco["grand_total"] == 0.0
+    assert tco["cost_per_km"] == {"fuel": None, "expenses": None,
+                                 "lease": None, "total": None}
+
+
 def test_report_csv(client):
     _seed(client)
     r = client.get("/api/report.csv")

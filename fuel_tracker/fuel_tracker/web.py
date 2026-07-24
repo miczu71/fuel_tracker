@@ -183,6 +183,15 @@ def create_app(db_path: str, config: dict,
         return render_template("settings.html", base=base(),
                                vehicle=v["name"], vehicle_id=v["id"])
 
+    @app.get("/compare")
+    def page_compare():
+        # Porównanie pojazdów (0.13.0) — strona zbiorcza, nie scoped do
+        # jednego auta, ale base.html/nav wymaga vehicle/vehicle_id (auto
+        # aktualnie przeglądane, do podświetlenia w przełączniku/linkach).
+        v = viewing_vehicle()
+        return render_template("compare.html", base=base(),
+                               vehicle=v["name"], vehicle_id=v["id"])
+
     @app.get("/manifest.webmanifest")
     def page_manifest():
         # PWA (0.10.0) — musi być szablonem Jinja, nie statycznym plikiem:
@@ -301,6 +310,41 @@ def create_app(db_path: str, config: dict,
             return jsonify({"error": "not found"}), 404
         changed()
         return jsonify({"ok": True})
+
+    # ── API: porównanie pojazdów (0.13.0) ──────────────────────────────────
+
+    @app.get("/api/compare")
+    def api_compare():
+        """Spalanie/koszt-km/TCO side-by-side dla wszystkich nie-
+        zarchiwizowanych pojazdów naraz. Błąd jednego auta (np. martwe dane)
+        nie może zablokować porównania reszty — ten sam wzorzec try/except
+        co main.py:publish_sensors()."""
+        active_id = active_vehicle_id()
+        rows = []
+        for v in dbm.list_vehicles(conn(), include_archived=False):
+            try:
+                fillups = queries.fetch_fillups(conn(), v["id"])
+                expenses = queries.fetch_expenses(conn(), v["id"])
+                s = st.compute_stats(fillups)
+                tco = st.tco_breakdown(fillups, expenses, v["monthly_rate"])
+                annual_km = st.projected_annual_km(fillups)
+                rows.append({
+                    "id": v["id"], "name": v["name"],
+                    "fuel_type": v["fuel_type"], "active": v["id"] == active_id,
+                    "fillup_count": s.fillup_count,
+                    "avg_consumption": s.avg_consumption,
+                    "cost_per_km": s.cost_per_km,
+                    "avg_price_per_l": s.avg_price_per_l,
+                    "total_distance_km": s.total_distance_km,
+                    "expenses_total": round(
+                        sum(e["cost"] for e in expenses), 2),
+                    "monthly_km": round(annual_km / 12) if annual_km else None,
+                    "tco": tco,
+                })
+            except Exception:
+                logger.exception("Porównanie: pominięto pojazd %s", v["id"])
+                continue
+        return jsonify(rows)
 
     # ── API: podsumowanie / wykresy ───────────────────────────────────────
 
@@ -584,19 +628,52 @@ def create_app(db_path: str, config: dict,
     @app.get("/api/categories")
     def api_categories():
         rows = conn().execute(
-            "SELECT id, name, hidden FROM expense_categories ORDER BY id"
+            "SELECT id, name, hidden, tco_group FROM expense_categories "
+            "ORDER BY id"
         ).fetchall()
         return jsonify([dict(r) for r in rows])
+
+    @app.post("/api/categories")
+    def api_category_create():
+        data = request.get_json(force=True)
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Wymagana nazwa"}), 400
+        try:
+            new_id = dbm.create_category(
+                conn(), name, tco_group=data.get("tco_group") or "other")
+        except dbm.CategoryError as exc:
+            return jsonify({"error": str(exc)}), 409
+        return jsonify({"id": new_id}), 201
 
     @app.put("/api/categories/<int:cid>")
     def api_category_update(cid: int):
         data = request.get_json(force=True)
-        cur = conn().execute(
-            "UPDATE expense_categories SET hidden = ? WHERE id = ?",
-            (1 if data.get("hidden") in (1, "1", True, "true") else 0, cid))
-        conn().commit()
-        if not cur.rowcount:
+        # "hidden" pozostaje osobnym, zawsze-dostępnym przełącznikiem
+        # (dotychczasowe zachowanie 0.12.x) — nazwa/tco_group są opcjonalne,
+        # dogrywane tylko gdy podane (0.13.0).
+        if "hidden" in data:
+            conn().execute(
+                "UPDATE expense_categories SET hidden = ? WHERE id = ?",
+                (1 if data.get("hidden") in (1, "1", True, "true") else 0, cid))
+            conn().commit()
+        try:
+            dbm.update_category(conn(), cid, name=data.get("name"),
+                                tco_group=data.get("tco_group"))
+        except dbm.CategoryError as exc:
+            return jsonify({"error": str(exc)}), 409
+        row = conn().execute(
+            "SELECT 1 FROM expense_categories WHERE id = ?", (cid,)).fetchone()
+        if not row:
             return jsonify({"error": "not found"}), 404
+        return jsonify({"ok": True})
+
+    @app.delete("/api/categories/<int:cid>")
+    def api_category_delete(cid: int):
+        ok, reason = dbm.delete_category(conn(), cid)
+        if not ok:
+            status = 404 if reason is None else 409
+            return jsonify({"error": reason or "not found"}), status
         return jsonify({"ok": True})
 
     @app.post("/api/expenses")
@@ -877,6 +954,7 @@ def create_app(db_path: str, config: dict,
             },
             "estimated_range_km": st.estimated_range_km(
                 s.avg_consumption, float(vehicle["tank_capacity_l"] or 0)),
+            "tco": st.tco_breakdown(fillups, expenses, vehicle["monthly_rate"]),
         })
 
     @app.get("/api/report.csv")

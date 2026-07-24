@@ -11,6 +11,10 @@
   --series-1: #2a78d6;  /* niebieski: spalanie / paliwo */
   --series-2: #1baf7a;  /* aqua: cena/L */
   --series-3: #eda100;  /* żółty: wydatki */
+  --series-4: #8a63d2;  /* fiolet: TCO — serwis */
+  --series-5: #d6598f;  /* róż: TCO — ubezpieczenie */
+  --series-6: #0f766e;  /* teal: TCO — opłaty */
+  --series-7: #6b7280;  /* szary: TCO — inne/leasing */
   --good: #0ca30c;
   --critical: #d03b3b;
 }
@@ -27,6 +31,10 @@
     --series-1: #3987e5;
     --series-2: #199e70;
     --series-3: #c98500;
+    --series-4: #a78bfa;
+    --series-5: #e37aa8;
+    --series-6: #2dd4bf;
+    --series-7: #94a3b8;
   }
 }
 

@@ -11,6 +11,16 @@ DEFAULT_CATEGORIES = [
     "Opłaty za przejazd", "Mandaty", "Tuning", "Ubezpieczenie", "Płyny", "Inne",
 ]
 
+# Grupowanie pod TCO (0.13.0, patrz migracja v10) — nazwy bez wpisu tutaj
+# (w tym "Inne" i wszystkie kategorie stworzone ręcznie) dostają "other".
+_DEFAULT_TCO_GROUPS = {
+    "Płyny": "fluids",
+    "Serwis": "service", "Eksploatacja": "service", "Tuning": "service",
+    "Ubezpieczenie": "insurance",
+    "Rejestracja": "fees", "Parking": "fees", "Myjnia": "fees",
+    "Opłaty za przejazd": "fees", "Mandaty": "fees",
+}
+
 _MIGRATIONS = [
     # v1 — schemat początkowy
     """
@@ -235,7 +245,26 @@ _MIGRATIONS = [
         'monthly_fuel_budget'
     );
     """,
+    # v10 — kategorie wydatków: własne kategorie przez UI + grupowanie pod
+    # TCO (0.13.0). tco_group jest tekstowym enumem (fluids/service/
+    # insurance/fees/other) czytanym przez stats.tco_breakdown — nieznana/
+    # pusta wartość traktowana tam jak "other". Backfill mapuje istniejące
+    # DEFAULT_CATEGORIES na sensowne grupy; reszta (w tym kategorie
+    # stworzone ręcznie przed tą migracją) spada na "other".
+    """
+    ALTER TABLE expense_categories ADD COLUMN tco_group TEXT NOT NULL DEFAULT 'other';
+
+    UPDATE expense_categories SET tco_group = 'fluids' WHERE name = 'Płyny';
+    UPDATE expense_categories SET tco_group = 'service'
+        WHERE name IN ('Serwis', 'Eksploatacja', 'Tuning');
+    UPDATE expense_categories SET tco_group = 'insurance' WHERE name = 'Ubezpieczenie';
+    UPDATE expense_categories SET tco_group = 'fees'
+        WHERE name IN ('Rejestracja', 'Parking', 'Myjnia',
+                       'Opłaty za przejazd', 'Mandaty');
+    """,
 ]
+
+TCO_GROUPS = ("fluids", "service", "insurance", "fees", "other")
 
 
 def get_conn(db_path: str | None = None) -> sqlite3.Connection:
@@ -258,8 +287,9 @@ def migrate(conn: sqlite3.Connection) -> None:
 def _seed_categories(conn: sqlite3.Connection) -> None:
     for name in DEFAULT_CATEGORIES:
         conn.execute(
-            "INSERT OR IGNORE INTO expense_categories (name) VALUES (?)", (name,)
-        )
+            "INSERT OR IGNORE INTO expense_categories (name, tco_group) "
+            "VALUES (?, ?)",
+            (name, _DEFAULT_TCO_GROUPS.get(name, "other")))
     conn.commit()
 
 
@@ -419,3 +449,62 @@ def category_id(conn: sqlite3.Connection, name: str | None) -> int:
     return conn.execute(
         "SELECT id FROM expense_categories WHERE name = 'Inne'"
     ).fetchone()["id"]
+
+
+# ── Kategorie wydatków: CRUD przez UI (0.13.0) ────────────────────────────
+
+class CategoryError(Exception):
+    """Nazwa zajęta / nieprawidłowa grupa TCO."""
+
+
+def create_category(conn: sqlite3.Connection, name: str,
+                    tco_group: str = "other") -> int:
+    name = name.strip()
+    group = tco_group if tco_group in TCO_GROUPS else "other"
+    try:
+        cur = conn.execute(
+            "INSERT INTO expense_categories (name, tco_group) VALUES (?, ?)",
+            (name, group))
+    except sqlite3.IntegrityError:
+        raise CategoryError(f"Kategoria „{name}” już istnieje")
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_category(conn: sqlite3.Connection, cid: int,
+                    name: str | None = None,
+                    tco_group: str | None = None) -> bool:
+    updates: dict = {}
+    if name:
+        updates["name"] = name.strip()
+    if tco_group:
+        updates["tco_group"] = tco_group if tco_group in TCO_GROUPS else "other"
+    if not updates:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    try:
+        cur = conn.execute(
+            f"UPDATE expense_categories SET {set_clause} WHERE id = ?",
+            (*updates.values(), cid))
+    except sqlite3.IntegrityError:
+        raise CategoryError(f"Kategoria „{updates.get('name')}” już istnieje")
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_category(conn: sqlite3.Connection,
+                    cid: int) -> tuple[bool, str | None]:
+    total = conn.execute(
+        "SELECT COUNT(*) AS n FROM expense_categories").fetchone()["n"]
+    if total <= 1:
+        return False, "Nie można usunąć jedynej kategorii"
+    used = conn.execute(
+        "SELECT 1 FROM expenses WHERE category_id = ? LIMIT 1",
+        (cid,)).fetchone()
+    if used:
+        return False, ("Kategoria ma przypisane wydatki — zmień je na inną "
+                       "kategorię albo ukryj zamiast usuwać")
+    cur = conn.execute(
+        "DELETE FROM expense_categories WHERE id = ?", (cid,))
+    conn.commit()
+    return cur.rowcount > 0, None

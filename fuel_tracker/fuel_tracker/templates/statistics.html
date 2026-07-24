@@ -27,8 +27,24 @@
 </div>
 
 <div class="card">
-  <div class="card-title">Podział kosztów</div>
-  <div id="split-chips" class="chips"></div>
+  <div class="card-title">Koszt posiadania (TCO)</div>
+  <div class="grid stats">
+    <div class="stat"><span class="stat-label">Razem / km</span><span class="stat-value" id="tco-per-km">–</span><span class="stat-unit">PLN/km</span></div>
+    <div class="stat"><span class="stat-label">Razem / miesiąc</span><span class="stat-value" id="tco-per-month">–</span><span class="stat-unit">PLN</span></div>
+    <div class="stat"><span class="stat-label">Razem / 100 km</span><span class="stat-value" id="tco-per-100km">–</span><span class="stat-unit">PLN</span></div>
+  </div>
+  <div class="chart-wrap"><canvas id="chart-tco"></canvas></div>
+  <p class="muted" id="tco-period"></p>
+</div>
+
+<div class="card">
+  <div class="card-title">Skumulowany koszt w czasie</div>
+  <div class="chart-wrap"><canvas id="chart-cumulative"></canvas></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Koszt/km w czasie</div>
+  <div class="chart-wrap"><canvas id="chart-cost-per-km"></canvas></div>
 </div>
 
 <div class="card">

@@ -20,7 +20,7 @@ def fetch_fillups(conn: sqlite3.Connection, vehicle_id: int,
 
 def fetch_expenses(conn: sqlite3.Connection, vehicle_id: int) -> list[dict]:
     return [dict(r) for r in conn.execute(
-        """SELECT e.*, c.name AS category
+        """SELECT e.*, c.name AS category, c.tco_group AS tco_group
            FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
            WHERE e.vehicle_id = ? ORDER BY e.date DESC""",
         (vehicle_id,),

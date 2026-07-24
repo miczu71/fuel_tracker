@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% set active = 'compare' %}
+{% block title %}Porównanie{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Porównanie pojazdów</h1></div>
+<p class="muted">Zestawienie wszystkich nie-zarchiwizowanych pojazdów naraz —
+niezależnie od tego, które auto jest aktualnie przeglądane.</p>
+
+<div class="card">
+  <div class="card-title">Zestawienie</div>
+  <div class="table-wrap"><table class="table" id="compare-table">
+    <thead><tr><th>Pojazd</th><th>Paliwo</th>
+    <th class="num">Tankowania</th><th class="num">Śr. spalanie</th>
+    <th class="num">Koszt/km (TCO)</th><th class="num">Śr. cena/L</th>
+    <th class="num">Przebieg/mies.</th><th class="num">Wydatki</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Średnie spalanie (L/100km)</div>
+  <div class="chart-wrap"><canvas id="chart-compare-consumption"></canvas></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Koszt posiadania na km (TCO, PLN/km)</div>
+  <div class="chart-wrap"><canvas id="chart-compare-tco"></canvas></div>
+</div>
+{% endblock %}
+{% block scripts %}<script>FT.initCompare();</script>{% endblock %}

@@ -59,6 +59,21 @@ def test_price_fallback_from_total(conn, vehicle_id):
     assert row["price_per_l"] == 6.0  # 120.0 / 20.0
 
 
+def test_log_header_matches_real_fuelio_export_format():
+    """Regresja formatu: nagłówek sekcji Log musi być bajt-w-bajt zgodny
+    z realnym eksportem sekcyjnym CSV (fixture), żeby eksport migracyjny
+    (0.13.0) dało się wgrać z powrotem do aplikacji źródłowej."""
+    real_header = csv_io.parse_sections(FIXTURE)["Log"]
+    assert real_header  # fixture ma wiersze — sam nagłówek trzymany osobno
+    # parse_sections zjada nagłówek (używa go jako kluczy dict) — odtwórz go
+    # z surowego tekstu fixture, żeby porównać 1:1 z csv_io.LOG_HEADER.
+    import csv as _csv
+    import io as _io
+    rows = list(_csv.reader(_io.StringIO(FIXTURE)))
+    log_start = rows.index(["## Log"])
+    assert rows[log_start + 1] == csv_io.LOG_HEADER
+
+
 def test_export_roundtrip(conn, vehicle_id, tmp_path):
     csv_io.import_into(conn, vehicle_id, FIXTURE)
     exported = csv_io.export_csv(conn, vehicle_id)

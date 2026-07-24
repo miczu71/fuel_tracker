@@ -168,7 +168,24 @@ def import_into(conn: sqlite3.Connection, vehicle_id: int, text: str,
 
 
 def export_csv(conn: sqlite3.Connection, vehicle_id: int) -> str:
-    """Eksport CSV (sekcje Vehicle/Log/CostCategories/Costs)."""
+    """Eksport CSV — bezpiecznik migracyjny do zewnętrznych dzienników
+    tankowań po sekcyjnym formacie CSV (nagłówek sekcji Log zweryfikowany
+    bajt-w-bajt względem realnego eksportu, patrz
+    test_log_header_matches_real_fuelio_export_format).
+
+    Dwa świadome ograniczenia, niedomknięte bez realnego re-importu do
+    aplikacji źródłowej (manualny test — poza zasięgiem tego add-onu):
+    - Sekcja Vehicle to okrojony podzbiór kolumn (Name/Make/Model/
+      TankCount/Tank1Capacity) — realny eksport ma znacznie więcej pól
+      (DistUnit/FuelUnit/ImportCSVDateFormat/...). Nasz import_into() jej
+      w ogóle nie czyta, więc brak wpływu na re-import do TEGO add-onu;
+      dla importu do aplikacji źródłowej bezpieczniej najpierw ręcznie
+      skonfigurować pojazd tam, a dopiero potem wgrać ten CSV.
+    - FuelType w Logu to zawsze "0" (nieznany/niesprecyzowany) — realne
+      eksporty mają numeryczne kody per rodzaj paliwa, ale ich mapowanie
+      nie jest udokumentowane nigdzie w tym repo; zgadywanie kodu ryzykuje
+      zaimportowanie złego typu paliwa, gorsze niż jawne "nieznany".
+    """
     out = io.StringIO()
     w = csv.writer(out, quoting=csv.QUOTE_ALL, lineterminator="\n")
 

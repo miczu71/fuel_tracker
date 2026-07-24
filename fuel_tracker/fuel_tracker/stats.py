@@ -296,6 +296,84 @@ def monthly_km(fillups: list[dict]) -> list[dict]:
 FLUIDS_CATEGORY = "Płyny"
 
 
+# ── Koszt posiadania / TCO (0.13.0) ───────────────────────────────────────
+
+_TCO_GROUPS = ("fluids", "service", "insurance", "fees", "other")
+_MONTH_DAYS = 30.0  # przybliżenie kalendarzowe — upraszcza rata→koszt/miesiąc
+
+
+def tco_breakdown(fillups: list[dict], expenses: list[dict],
+                  monthly_rate: Optional[float] = None) -> dict:
+    """Rozbicie kosztu posiadania na całej dostępnej historii (fillups +
+    expenses): paliwo, wydatki per grupa TCO (expense_categories.tco_group),
+    rata leasingu (monthly_rate × liczba miesięcy rozpiętości dat) oraz
+    koszt/km i koszt/miesiąc.
+
+    Dystans i koszt paliwa liczone przez compute_stats() — ta sama
+    definicja co reszta statystyk, zero rozjazdu między kartami. Brak
+    (lub pojedynczy) wpis z datą zwraca strukturę z samymi None/zerami,
+    żeby /api/statistics nie musiało się tym martwić przy świeżym pojeździe.
+    """
+    s = compute_stats(fillups)
+    fuel_total = s.total_cost
+    distance_km = s.total_distance_km
+
+    dated = [f["date"] for f in fillups if f.get("date")] + \
+            [e["date"] for e in expenses if e.get("date")]
+    period_months: Optional[float] = None
+    if len(dated) >= 2:
+        try:
+            t0 = datetime.fromisoformat(min(dated).replace(" ", "T"))
+            t1 = datetime.fromisoformat(max(dated).replace(" ", "T"))
+        except ValueError:
+            t0 = t1 = None
+        if t0 is not None:
+            days = (t1 - t0).total_seconds() / 86400
+            if days > 0:
+                period_months = days / _MONTH_DAYS
+
+    by_group = {g: 0.0 for g in _TCO_GROUPS}
+    for e in expenses:
+        group = e.get("tco_group")
+        by_group[group if group in _TCO_GROUPS else "other"] += e["cost"]
+    by_group = {g: round(v, 2) for g, v in by_group.items()}
+    expenses_total = round(sum(by_group.values()), 2)
+
+    # monthly_rate=0 równoważne brakowi ustawionej raty (konwencja jak
+    # monthly_budget w queries.summary) — leasing pomijany, nie liczony jako 0.
+    lease_total = round(monthly_rate * period_months, 2) \
+        if monthly_rate and period_months else None
+
+    grand_total = round(fuel_total + expenses_total + (lease_total or 0), 2)
+
+    def per_km(value: Optional[float]) -> Optional[float]:
+        # Zero to prawidłowa wartość (np. brak wydatków w tym okresie) —
+        # rozróżniamy ją od braku danych (dystans nieznany/zerowy → None).
+        if value is None or not distance_km:
+            return None
+        return round(value / distance_km, 4)
+
+    return {
+        "period_months": round(period_months, 2) if period_months else None,
+        "distance_km": distance_km,
+        "fuel_total": fuel_total,
+        "expenses_total": expenses_total,
+        "by_group": by_group,
+        "lease_total": lease_total,
+        "grand_total": grand_total,
+        "cost_per_km": {
+            "fuel": per_km(fuel_total),
+            "expenses": per_km(expenses_total),
+            "lease": per_km(lease_total),
+            "total": per_km(grand_total),
+        },
+        "cost_per_month": round(grand_total / period_months, 2)
+                          if period_months else None,
+        "cost_per_100km": round(100 * grand_total / distance_km, 2)
+                          if distance_km else None,
+    }
+
+
 def monthly_report(fillups: list[dict], expenses: list[dict]) -> list[dict]:
     """Raport miesięczny do weryfikacji zestawienia ORLEN Flota.
 

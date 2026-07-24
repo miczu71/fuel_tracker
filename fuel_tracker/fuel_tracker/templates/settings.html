@@ -118,8 +118,28 @@
 <div class="card">
   <div class="card-title">Kategorie wydatków</div>
   <p class="muted">Ukryte kategorie nie pojawiają się w formularzu wydatku
-  (historyczne wpisy zostają bez zmian).</p>
-  <div id="category-list" class="chips"></div>
+  (historyczne wpisy zostają bez zmian). Grupa TCO decyduje, jak wydatek
+  liczy się w rozbiciu kosztu posiadania na stronie Statystyki.</p>
+  <div id="category-list"></div>
+  <button type="button" class="btn primary" id="category-add-btn">
+    + Dodaj kategorię</button>
+  <form class="form" id="category-form" hidden>
+    <div class="card-title" id="category-form-title"></div>
+    <input type="hidden" id="cat-id">
+    <label>Nazwa <input type="text" id="cat-name" required></label>
+    <label>Grupa TCO
+      <select id="cat-group">
+        <option value="fluids">Płyny</option>
+        <option value="service">Serwis</option>
+        <option value="insurance">Ubezpieczenie</option>
+        <option value="fees">Opłaty</option>
+        <option value="other">Inne</option>
+      </select></label>
+    <div class="form-actions">
+      <button type="submit" class="btn primary">Zapisz</button>
+      <button type="button" class="btn" id="cat-cancel">Anuluj</button>
+    </div>
+  </form>
 </div>
 
 <div class="card">
@@ -147,6 +167,13 @@
 
 <div class="card">
   <div class="card-title">Eksport</div>
+  <p class="muted">Format sekcyjny CSV (<code>## Vehicle</code> /
+  <code>## Log</code> / <code>## CostCategories</code> / <code>## Costs</code>)
+  kompatybilny z popularnymi dziennikami tankowań — bezpiecznik migracyjny
+  na wypadek potrzeby przejścia na inną aplikację. Sekcja Log (tankowania)
+  jest w pełni zgodna; sekcja Vehicle to okrojony podzbiór pól, więc przy
+  imporcie do innej aplikacji wygodniej najpierw ręcznie skonfigurować tam
+  pojazd, a dopiero potem wgrać ten plik.</p>
   <a class="btn" href="api/export/log.csv?vehicle_id={{ vehicle_id }}">Pobierz CSV</a>
 </div>
 {% endblock %}

@@ -1,5 +1,5 @@
 name: Fuel Tracker
-version: "0.12.1"
+version: "0.13.0"
 slug: fuel_tracker
 description: >-
   Dziennik tankowań i wydatków samochodu.

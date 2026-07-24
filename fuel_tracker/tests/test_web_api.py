@@ -216,10 +216,62 @@ def test_category_hide_toggle(client):
     assert next(c for c in cats if c["id"] == serwis)["hidden"] == 1
 
 
+def test_category_list_includes_tco_group(client):
+    cats = client.get("/api/categories").get_json()
+    plyny = next(c for c in cats if c["name"] == "Płyny")
+    assert plyny["tco_group"] == "fluids"
+
+
+def test_category_create(client):
+    r = client.post("/api/categories", json={
+        "name": "Opony", "tco_group": "service"})
+    assert r.status_code == 201
+    cid = r.get_json()["id"]
+    cats = client.get("/api/categories").get_json()
+    row = next(c for c in cats if c["id"] == cid)
+    assert row["name"] == "Opony" and row["tco_group"] == "service"
+
+
+def test_category_create_requires_name(client):
+    assert client.post("/api/categories", json={}).status_code == 400
+
+
+def test_category_create_rejects_duplicate(client):
+    client.post("/api/categories", json={"name": "Opony"})
+    r = client.post("/api/categories", json={"name": "Opony"})
+    assert r.status_code == 409
+
+
+def test_category_rename_and_regroup(client):
+    cid = client.post("/api/categories", json={"name": "Opony"}).get_json()["id"]
+    r = client.put(f"/api/categories/{cid}", json={
+        "name": "Opony sezonowe", "tco_group": "service"})
+    assert r.status_code == 200
+    cats = client.get("/api/categories").get_json()
+    row = next(c for c in cats if c["id"] == cid)
+    assert row["name"] == "Opony sezonowe" and row["tco_group"] == "service"
+
+
+def test_category_delete(client):
+    cid = client.post("/api/categories", json={"name": "Do usunięcia"}).get_json()["id"]
+    assert client.delete(f"/api/categories/{cid}").status_code == 200
+    cats = client.get("/api/categories").get_json()
+    assert all(c["id"] != cid for c in cats)
+
+
+def test_category_delete_with_expenses_refused(client):
+    cats = client.get("/api/categories").get_json()
+    plyny = next(c["id"] for c in cats if c["name"] == "Płyny")
+    client.post("/api/expenses", json={
+        "date": "2025-01-10T09:00", "cost": 50, "category_id": plyny})
+    r = client.delete(f"/api/categories/{plyny}")
+    assert r.status_code == 409
+
+
 def test_pages_render_without_absolute_urls(client):
     # Ingress: żadnych href/src zaczynających się od "/" (poza X-Ingress-Path).
     for path in ("/", "/fillups", "/fillup-form", "/expenses", "/settings",
-                 "/map", "/statistics"):
+                 "/map", "/statistics", "/compare"):
         r = client.get(path, headers={"X-Ingress-Path": "/api/hassio_ingress/tok"})
         assert r.status_code == 200
         html = r.data.decode()
