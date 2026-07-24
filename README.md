@@ -56,9 +56,13 @@ pełnymi bakami, sensory MQTT discovery i mobilny web UI po polsku przez ingress
   tymczasowo do porównania, aż do osobnej decyzji o wycofaniu.
 - **Walidacja przebiegu** — odometr musi rosnąć w czasie względem sąsiednich
   wpisów (chyba że zaznaczono „Pominięto poprzednie tankowanie").
-- **Wydatki w kategoriach** — Serwis, Eksploatacja, Rejestracja, Parking,
-  Myjnia, Opłaty za przejazd, Mandaty, Tuning, Ubezpieczenie, Płyny, Inne;
-  edycja wpisów, ukrywanie nieużywanych kategorii w Ustawieniach.
+- **Wydatki w kategoriach, w pełni edytowalnych (od 0.13.0)** — domyślne:
+  Serwis, Eksploatacja, Rejestracja, Parking, Myjnia, Opłaty za przejazd,
+  Mandaty, Tuning, Ubezpieczenie, Płyny, Inne; można dodawać własne,
+  zmieniać nazwę, przypisywać grupę TCO (Płyny/Serwis/Ubezpieczenie/
+  Opłaty/Inne — decyduje o rozbiciu kosztu posiadania) i ukrywać/usuwać
+  w Ustawieniach (usunięcie odmówione dla kategorii z przypisanymi
+  wydatkami albo dla jedynej pozostałej).
 - **Import CSV** — upload w UI lub auto-import plików `*.csv`
   z `/share/fuel_tracker/import/` przy starcie (format z sekcjami
   `## Vehicle` / `## Log` — patrz eksport); idempotentny (re-import nie
@@ -104,8 +108,26 @@ pełnymi bakami, sensory MQTT discovery i mobilny web UI po polsku przez ingress
   (nie tylko jedno aktywne). Dotychczasowe auto zostaje na dzisiejszym
   entity_id (zero migracji), każde kolejne dostaje własne urządzenie MQTT.
   Budżet i encje HA (odometr/poziom paliwa/lokalizacja) są teraz polem
-  każdego pojazdu — formularz „Pojazdy" w Ustawieniach. Prefill i
+  każdego pojazdu — formularz „Pojazdy” w Ustawieniach. Prefill i
   Statystyki czytają encje przeglądanego (nie tylko aktywnego) auta.
+- **Koszt posiadania — TCO (od 0.13.0)** — karta na stronie Statystyki:
+  rozbicie kosztu na paliwo / wydatki per grupa TCO / ratę leasingu
+  (pierwsze wykorzystanie pola „rata miesięczna” z karty Pojazdy),
+  kafelki koszt razem/km, razem/miesiąc, razem/100 km, wykres kołowy
+  rozbicia. Zastępuje dawną kartę „Podział kosztów”.
+- **Porównanie pojazdów (od 0.13.0)** — nowa strona: zestawienie
+  wszystkich nie-zarchiwizowanych pojazdów naraz (tankowania, średnie
+  spalanie, koszt/km TCO, średnia cena/L, przebieg/miesiąc, wydatki),
+  niezależnie od aktualnie przeglądanego auta.
+- **Bogatsze wykresy statystyk (od 0.13.0)** — skumulowany koszt w
+  czasie i trend koszt/km miesiąc po miesiącu, obok istniejących
+  wykresów spalania i ceny.
+- **Eksport CSV zweryfikowany jako bezpiecznik migracyjny (od 0.13.0)**
+  — format sekcyjny kompatybilny z popularnymi dziennikami tankowań;
+  nagłówek sekcji `Log` zablokowany testem regresyjnym względem realnej
+  próbki eksportu. Sekcja `Vehicle` to okrojony podzbiór pól źródłowego
+  formatu, a pole `FuelType` jest zawsze nieokreślone — przy imporcie do
+  innej aplikacji wygodniej najpierw ręcznie skonfigurować tam pojazd.
 
 ## Encje (MQTT discovery)
 
@@ -246,10 +268,13 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 ## REST API (przez ingress)
 
 `GET /api/summary` · CRUD `/api/fillups` · `GET /api/prefill` ·
-`GET /api/rate` · CRUD `/api/expenses` · `GET|PUT /api/categories` ·
+`GET /api/rate` · CRUD `/api/expenses` · CRUD `/api/categories`
+(od 0.13.0 — dawniej tylko `GET|PUT`) ·
 `GET /api/stations` · `GET /api/stations/nearby` · `GET /api/map-data` ·
 `POST /api/receipts/parse` · `GET /api/attachments/<id>` ·
-`GET /api/statistics` · `GET /api/report.csv` · `POST /api/import/csv` ·
+`GET /api/statistics` (od 0.13.0 z blokiem `tco`) ·
+`GET /api/compare` (od 0.13.0) · `GET /api/report.csv` ·
+`POST /api/import/csv` ·
 `POST /api/import/drivvo` · `GET /api/export/log.csv` ·
 `GET|PUT /api/settings` · `GET /api/ha-services` ·
 `GET /api/vehicles` · `POST /api/vehicles` (od 0.9.0 także pola leasingu,
