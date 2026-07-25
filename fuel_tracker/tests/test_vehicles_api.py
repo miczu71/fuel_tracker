@@ -93,6 +93,30 @@ def test_get_vehicle_404_for_unknown_id(app_ctx):
     assert client.get("/api/vehicles/9999").status_code == 404
 
 
+def test_create_vehicle_rejects_garbage_numeric_field(app_ctx):
+    """Regresja B7: api_vehicle_create woła float()/int() na surowym JSON
+    bez osłony -> ValueError nieobsłużony -> 500 zamiast normalnej
+    odpowiedzi walidacyjnej."""
+    client, db_path, vid = app_ctx
+    r = client.post("/api/vehicles", json={
+        "name": "X", "tank_capacity_l": "abc"})
+    assert r.status_code == 400
+    assert r.is_json
+
+
+def test_update_vehicle_rejects_garbage_numeric_field(app_ctx):
+    """Regresja B7: PUT przekazywał dane bez konwersji typów wprost do
+    dbm.update_vehicle -> SQL. SQLite (dynamic typing) pozwala zapisać
+    tekst do kolumny REAL, więc to była cicha korupcja danych — gorsza niż
+    500, bo endpoint zwracał 200 OK ze śmieciem zapisanym w bazie, do
+    następnego wyliczenia TCO/leasingu."""
+    client, db_path, vid = app_ctx
+    r = client.put(f"/api/vehicles/{vid}", json={"monthly_rate": "abc"})
+    assert r.status_code == 400
+    v = client.get(f"/api/vehicles/{vid}").get_json()
+    assert v["monthly_rate"] is None  # nietknięte, nie zapisany śmieć
+
+
 def test_statistics_includes_lease_km_margin(app_ctx):
     client, db_path, vid = app_ctx
     c = dbm.get_conn(db_path)

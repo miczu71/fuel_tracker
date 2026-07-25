@@ -19,6 +19,27 @@ FILLUPS = [
 ]
 
 
+def test_monthly_report_classifies_fluids_by_tco_group_not_name():
+    """Regresja B4: kategorie edytowalne (0.13.0) pozwalają zmienić nazwę
+    "Płyny" — monthly_report() klasyfikował dotąd po dopasowaniu tekstowym
+    do FLUIDS_CATEGORY, więc zmiana nazwy po cichu przesuwała kwotę do
+    "Inne wydatki" mimo że tco_group nadal jest 'fluids'."""
+    expenses = [{"date": "2026-07-02", "cost": 120.0,
+                "category": "Płyny eksploatacyjne", "tco_group": "fluids"}]
+    row = st.monthly_report([], expenses)[0]
+    assert row["fluids"] == 120.0
+    assert row["other_expenses"] == 0.0
+
+
+def test_monthly_report_falls_back_to_name_when_tco_group_missing():
+    """Zgodność wsteczna: wpisy bez klucza tco_group (starsze wywołania,
+    dane z import_json sprzed migracji #10) nadal klasyfikowane po nazwie."""
+    expenses = [{"date": "2026-07-02", "cost": 45.0, "category": "Płyny"}]
+    row = st.monthly_report([], expenses)[0]
+    assert row["fluids"] == 45.0
+    assert row["other_expenses"] == 0.0
+
+
 def test_estimated_range():
     assert st.estimated_range_km(6.0, 66.0) == 1100
     assert st.estimated_range_km(None, 66.0) is None

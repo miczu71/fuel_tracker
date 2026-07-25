@@ -37,8 +37,11 @@ def _fmt(value, digits: int = 0) -> str:
 def _budget_state(settings: dict, values: dict) -> str | None:
     if not settings.get("alert_budget_enabled"):
         return None
-    if not settings.get("monthly_fuel_budget"):
-        return None
+    # Budżet żyje w vehicles.monthly_fuel_budget (migracja #9, 0.11.0), nie
+    # w settings — queries.sensor_values() już koduje "budżet nieustawiony"
+    # jako budget_left_month=None, więc to jedyna bramka potrzebna tutaj.
+    # (Dawna bramka na settings["monthly_fuel_budget"] czytała klucz, który
+    # ta migracja usunęła — alert był martwy od 0.11.0 do tego fixa.)
     left = values.get("budget_left_month")
     if left is None:
         return None

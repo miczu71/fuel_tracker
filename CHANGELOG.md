@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.13.1
+
+- **Fix (krytyczny): alert budżetu paliwowego martwy od 0.11.0.**
+  `notifications.py` bramkował alert na `settings["monthly_fuel_budget"]` —
+  migracja #9 (0.11.0) przeniosła to pole do `vehicles.monthly_fuel_budget`
+  i usunęła klucz z `settings`, więc bramka zawsze czytała pustkę i alert
+  nigdy nie odpalał, mimo że był włączony i skonfigurowany. Bramka usunięta
+  — `budget_left_month` z sensorów już koduje "budżet nieustawiony" jako
+  `None`, więc jest zbędna.
+- **Fix: usunięta/przemianowana domyślna kategoria wydatku wracała po
+  restarcie add-onu.** Seed domyślnych kategorii uruchamiał się przy
+  każdym starcie, nie tylko na świeżej instalacji — usunięcie kategorii
+  było nietrwałe, a zmiana nazwy tworzyła duplikat (stara nazwa "wolna"
+  → wsiewana z powrotem). Seed teraz działa wyłącznie, gdy tabela kategorii
+  jest pusta.
+- **Fix: raport miesięczny i podział kosztów gubiły kategorię „Płyny” po
+  zmianie jej nazwy.** Klasyfikacja szła po dopasowaniu tekstowym do
+  `"Płyny"` zamiast po `tco_group` — funkcja własnych kategorii (0.13.0)
+  pozwala tę nazwę zmienić, co po cichu przesuwało kwoty do „Inne wydatki”
+  w raporcie miesięcznym, `/api/statistics` (`split`) i eksporcie CSV.
+- **Fix: usunięcie pojazdu z historią alertów kończyło się błędem 500.**
+  `alert_state` (stan anty-flap powiadomień) ma klucz obcy do pojazdu;
+  usuwanie nie czyściło tych wierszy, więc `DELETE /api/vehicles/<id>`
+  wywalało się na naruszeniu integralności dla każdego auta, dla którego
+  scheduler zdążył choć raz policzyć alert.
+- **Fix: drugi identyczny wydatek (ta sama data/kwota/opis) kończył się
+  błędem 500** zamiast czytelnego komunikatu — brakowało obsługi
+  konfliktu unikalności, którą tankowania miały od dawna.
+- **Fix: nieprawidłowe wartości liczbowe w formularzu pojazdu.**
+  `POST /api/vehicles` z tekstem w polu pojemności baku/raty/limitu kończył
+  się błędem 500; `PUT /api/vehicles/<id>` w ogóle nie sprawdzał typów i po
+  cichu zapisywał śmieć do kolumny liczbowej (SQLite na to pozwala) —
+  zepsute dane wychodziły dopiero przy kolejnym wyliczeniu TCO/leasingu.
+  Oba endpointy walidują teraz pola liczbowe i zwracają 400.
+- Zero zmian w formacie danych/API poza kodami błędów opisanymi wyżej
+  (400/409 zamiast 500). 268/268 testów zielonych (13 nowych regresyjnych).
+
 ## 0.12.1
 
 - **Porządki po 0.12.0** — bez zmian funkcjonalnych:

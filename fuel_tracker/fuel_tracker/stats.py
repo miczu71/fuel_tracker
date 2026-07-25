@@ -296,6 +296,19 @@ def monthly_km(fillups: list[dict]) -> list[dict]:
 FLUIDS_CATEGORY = "Płyny"
 
 
+def _expense_bucket(e: dict) -> str:
+    """"fluids" albo "other_expenses" dla monthly_report()/split — po
+    tco_group (kategorie edytowalne, 0.13.0, migracja #10), z fallbackiem
+    na dawne dopasowanie po nazwie, gdy tco_group nie jest dostępny (wpisy
+    sprzed migracji #10, np. z import_json ze starszej kopii zapasowej).
+    Klasyfikacja po nazwie łamała się po zmianie nazwy kategorii — kwota
+    po cichu przeciekała do "Inne wydatki" mimo tco_group='fluids'."""
+    group = e.get("tco_group")
+    if group is not None:
+        return "fluids" if group == "fluids" else "other_expenses"
+    return "fluids" if e.get("category") == FLUIDS_CATEGORY else "other_expenses"
+
+
 # ── Koszt posiadania / TCO (0.13.0) ───────────────────────────────────────
 
 _TCO_GROUPS = ("fluids", "service", "insurance", "fees", "other")
@@ -395,9 +408,7 @@ def monthly_report(fillups: list[dict], expenses: list[dict]) -> list[dict]:
         d["volume_l"] += f["volume_l"]
     for e in expenses:
         d = row(e["date"][:7])
-        key = "fluids" if e.get("category") == FLUIDS_CATEGORY \
-            else "other_expenses"
-        d[key] += e["cost"]
+        d[_expense_bucket(e)] += e["cost"]
     for k in monthly_km(fillups):
         row(k["month"])["km"] = k["km"]
 

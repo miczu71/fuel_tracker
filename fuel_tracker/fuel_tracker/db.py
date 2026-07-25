@@ -285,6 +285,16 @@ def migrate(conn: sqlite3.Connection) -> None:
 
 
 def _seed_categories(conn: sqlite3.Connection) -> None:
+    # Seeduje TYLKO świeżą instalację (tabela pusta) — migrate() woła to
+    # przy każdym starcie add-onu, a "INSERT OR IGNORE" po nazwie by
+    # reasekurowało każdą kategorię usuniętą przez użytkownika i tworzyło
+    # duplikat po każdej zmianie nazwy (usunięta/przemianowana nazwa znów
+    # "wolna" → wraca przy najbliższym restarcie kontenera). Istniejące
+    # instalacje mają własną, świadomie zarządzaną listę kategorii —
+    # add-on nie ma prawa jej korygować (patrz CHANGELOG 0.13.1).
+    if conn.execute(
+            "SELECT 1 FROM expense_categories LIMIT 1").fetchone():
+        return
     for name in DEFAULT_CATEGORIES:
         conn.execute(
             "INSERT OR IGNORE INTO expense_categories (name, tco_group) "
@@ -433,6 +443,12 @@ def delete_vehicle(conn: sqlite3.Connection,
     ok, reason = can_delete_vehicle(conn, vehicle_id)
     if not ok:
         return False, reason
+    # alert_state (migracja #8) ma FK do vehicles(id); to stan pochodny
+    # (anty-flap powiadomień), bez wartości po zniknięciu auta — w
+    # odróżnieniu od fillups/expenses (sprawdzone wyżej przez
+    # can_delete_vehicle), które słusznie blokują usunięcie. Bez tego
+    # DELETE poniżej rzuca IntegrityError (PRAGMA foreign_keys=ON).
+    conn.execute("DELETE FROM alert_state WHERE vehicle_id = ?", (vehicle_id,))
     conn.execute("DELETE FROM vehicles WHERE id = ?", (vehicle_id,))
     conn.commit()
     return True, None

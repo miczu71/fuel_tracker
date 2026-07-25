@@ -66,6 +66,20 @@ def test_statistics_endpoint(client):
     assert s["region"]["latest"] is None  # scraper jeszcze nie działał
 
 
+def test_statistics_split_survives_fluids_category_rename(client):
+    """Regresja B4: split['fluids'] w /api/statistics klasyfikował po
+    nazwie "Płyny" — po zmianie nazwy kategorii (0.13.0 pozwala na to)
+    kwota po cichu przeciekała do other_expenses."""
+    _seed(client)
+    cats = {c["name"]: c["id"] for c in client.get("/api/categories").get_json()}
+    r = client.put(f"/api/categories/{cats['Płyny']}",
+                   json={"name": "Płyny eksploatacyjne"})
+    assert r.status_code == 200
+    s = client.get("/api/statistics").get_json()
+    assert s["split"]["fluids"] == 45.0
+    assert s["split"]["other_expenses"] == 120.0
+
+
 def test_statistics_empty_db(client):
     s = client.get("/api/statistics").get_json()
     assert s["records"]["best_consumption"] is None

@@ -76,3 +76,42 @@ def test_delete_category_refuses_last_category(conn):
     ok, reason = dbm.delete_category(conn, cid)
     assert not ok
     assert "jedyn" in reason.lower()
+
+
+# ── Regresja B2/B3: _seed_categories() reasekurowało domyślne kategorie
+# przy KAŻDYM starcie add-onu (migrate() woła je zawsze), nie tylko na
+# świeżej instalacji — więc usunięcie/zmiana nazwy kategorii domyślnej
+# było nietrwałe: znikało po najbliższym restarcie kontenera. ────────────
+
+def test_deleted_default_category_does_not_reappear_after_restart(conn):
+    cid = conn.execute(
+        "SELECT id FROM expense_categories WHERE name = 'Mandaty'").fetchone()["id"]
+    ok, reason = dbm.delete_category(conn, cid)
+    assert ok and reason is None
+    dbm.migrate(conn)  # symuluje restart add-onu
+    row = conn.execute(
+        "SELECT 1 FROM expense_categories WHERE name = 'Mandaty'").fetchone()
+    assert row is None
+
+
+def test_renamed_default_category_does_not_duplicate_after_restart(conn):
+    cid = conn.execute(
+        "SELECT id FROM expense_categories WHERE name = 'Płyny'").fetchone()["id"]
+    assert dbm.update_category(conn, cid, name="Płyny eksploatacyjne")
+    dbm.migrate(conn)  # symuluje restart add-onu
+    names = {r["name"] for r in
+             conn.execute("SELECT name FROM expense_categories")}
+    assert "Płyny eksploatacyjne" in names
+    assert "Płyny" not in names
+
+
+def test_fresh_install_still_gets_all_default_categories(tmp_path):
+    """Świeża baza (tabela pusta przed pierwszą migracją) musi nadal
+    dostać komplet domyślnych kategorii — tylko ISTNIEJĄCE instalacje mają
+    być chronione przed reasekuracją."""
+    c = dbm.get_conn(str(tmp_path / "fresh.db"))
+    dbm.migrate(c)
+    names = {r["name"] for r in
+             c.execute("SELECT name FROM expense_categories")}
+    assert names == set(dbm.DEFAULT_CATEGORIES)
+    c.close()

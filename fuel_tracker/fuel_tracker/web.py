@@ -223,6 +223,24 @@ def create_app(db_path: str, config: dict,
 
     # ── API: pojazdy (0.8.0, cykl życia + leasing per auto) ────────────────
 
+    # Pola liczbowe pojazdu (create+update) — konwersja przed dotknięciem
+    # SQL-a. Bez tego: float()/int() na surowym JSON w create rzucał
+    # ValueError nieobsłużony (500); update wpuszczał wartość dowolnego typu
+    # wprost do dbm.update_vehicle -> SQL — SQLite (dynamic typing) na to
+    # pozwala, więc śmieć zapisywał się cicho do kolumny REAL/INTEGER,
+    # psując późniejsze wyliczenia TCO/leasingu bez żadnego błędu (B7).
+    _VEHICLE_NUMERIC_FIELDS = {
+        "tank_capacity_l": float, "monthly_fuel_budget": float,
+        "monthly_rate": float, "lease_km_limit": int,
+    }
+
+    def _coerce_vehicle_numbers(data: dict) -> dict:
+        out = dict(data)
+        for key, caster in _VEHICLE_NUMERIC_FIELDS.items():
+            if key in out and out[key] not in (None, ""):
+                out[key] = caster(out[key])
+        return out
+
     @app.get("/api/vehicles")
     def api_vehicles_list():
         active_id = active_vehicle_id()
@@ -237,6 +255,10 @@ def create_app(db_path: str, config: dict,
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Wymagana nazwa"}), 400
+        try:
+            data = _coerce_vehicle_numbers(data)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Nieprawidłowa wartość liczbowa"}), 400
         limit = data.get("lease_km_limit")
         rate = data.get("monthly_rate")
         new_id = dbm.create_vehicle(
@@ -261,6 +283,10 @@ def create_app(db_path: str, config: dict,
         if not dbm.get_vehicle(conn(), vid):
             return jsonify({"error": "not found"}), 404
         data = request.get_json(force=True)
+        try:
+            data = _coerce_vehicle_numbers(data)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Nieprawidłowa wartość liczbowa"}), 400
         if not dbm.update_vehicle(conn(), vid, data):
             return jsonify({"error": "Brak poprawnych pól"}), 400
         changed()
@@ -686,13 +712,17 @@ def create_app(db_path: str, config: dict,
         cost = float(data.get("cost") or 0)
         if not date or cost <= 0:
             return jsonify({"error": "Wymagane: data i kwota"}), 400
-        cur = conn().execute(
-            """INSERT INTO expenses (vehicle_id, date, odometer, category_id,
-               description, cost, source) VALUES (?,?,?,?,?,?,'manual')""",
-            (vid, date, int(data.get("odometer") or 0) or None,
-             int(data.get("category_id") or 0) or dbm.category_id(conn(), None),
-             (data.get("description") or "").strip() or None, cost))
-        conn().commit()
+        try:
+            cur = conn().execute(
+                """INSERT INTO expenses (vehicle_id, date, odometer, category_id,
+                   description, cost, source) VALUES (?,?,?,?,?,?,'manual')""",
+                (vid, date, int(data.get("odometer") or 0) or None,
+                 int(data.get("category_id") or 0) or dbm.category_id(conn(), None),
+                 (data.get("description") or "").strip() or None, cost))
+            conn().commit()
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Identyczny wydatek (data, kwota, opis) "
+                                     "już istnieje — zmień opis albo godzinę"}), 409
         _link_attachment(data, "expense_id", cur.lastrowid)
         changed()
         return jsonify({"id": cur.lastrowid}), 201
@@ -707,14 +737,18 @@ def create_app(db_path: str, config: dict,
         cost = float(data.get("cost") or 0)
         if not date or cost <= 0:
             return jsonify({"error": "Wymagane: data i kwota"}), 400
-        cur = conn().execute(
-            """UPDATE expenses SET date=?, odometer=?, category_id=?,
-               description=?, cost=? WHERE id=? AND vehicle_id=?""",
-            (date, int(data.get("odometer") or 0) or None,
-             int(data.get("category_id") or 0) or dbm.category_id(conn(), None),
-             (data.get("description") or "").strip() or None, cost,
-             eid, vid))
-        conn().commit()
+        try:
+            cur = conn().execute(
+                """UPDATE expenses SET date=?, odometer=?, category_id=?,
+                   description=?, cost=? WHERE id=? AND vehicle_id=?""",
+                (date, int(data.get("odometer") or 0) or None,
+                 int(data.get("category_id") or 0) or dbm.category_id(conn(), None),
+                 (data.get("description") or "").strip() or None, cost,
+                 eid, vid))
+            conn().commit()
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Identyczny wydatek (data, kwota, opis) "
+                                     "już istnieje — zmień opis albo godzinę"}), 409
         if not cur.rowcount:
             return jsonify({"error": "not found"}), 404
         changed()
@@ -929,11 +963,13 @@ def create_app(db_path: str, config: dict,
                                        if f.get("paid_by") != "own"), 2),
                 "fuel_own": round(sum(f["total_cost"] for f in fillups
                                       if f.get("paid_by") == "own"), 2),
+                # Po tco_group, nie po nazwie kategorii (patrz
+                # stats._expense_bucket — zmiana nazwy 0.13.0 łamała to).
                 "fluids": round(sum(e["cost"] for e in expenses
-                                    if e.get("category") == st.FLUIDS_CATEGORY), 2),
+                                    if st._expense_bucket(e) == "fluids"), 2),
                 "other_expenses": round(sum(
                     e["cost"] for e in expenses
-                    if e.get("category") != st.FLUIDS_CATEGORY), 2),
+                    if st._expense_bucket(e) != "fluids"), 2),
             },
             "region": {
                 "name": region, "fuel_type": fuel_type,

@@ -115,6 +115,26 @@ def test_delete_vehicle_refuses_with_history(conn, vehicle_id):
     assert dbm.get_vehicle(conn, other_id) is not None
 
 
+def test_delete_vehicle_with_alert_state_does_not_crash(conn, vehicle_id):
+    """Regresja B5: alert_state (migracja #8) ma FK do vehicles(id) i
+    połączenie działa z PRAGMA foreign_keys=ON — DELETE FROM vehicles bez
+    posprzątania alert_state rzucał IntegrityError nieobsłużony aż do
+    web.py (500 zamiast normalnej odpowiedzi). Trafiało w każdy pojazd, dla
+    którego scheduler zdążył raz policzyć alert (15 min od startu)."""
+    other_id = dbm.create_vehicle(conn, "Mazda", 45.0, "PB95")
+    conn.execute(
+        "INSERT INTO alert_state (alert, vehicle_id, state) "
+        "VALUES ('budget', ?, 'warning')", (other_id,))
+    conn.commit()
+    ok, reason = dbm.delete_vehicle(conn, other_id)
+    assert ok is True
+    assert reason is None
+    assert dbm.get_vehicle(conn, other_id) is None
+    assert conn.execute(
+        "SELECT 1 FROM alert_state WHERE vehicle_id = ?",
+        (other_id,)).fetchone() is None
+
+
 def test_create_vehicle_with_lease_kwargs(conn, vehicle_id):
     new_id = dbm.create_vehicle(
         conn, "Mazda", 45.0, "PB95", lease_start="2025-01-01",

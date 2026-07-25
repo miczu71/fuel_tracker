@@ -89,6 +89,34 @@ def test_expense_crud(client):
     assert client.delete(f"/api/expenses/{rows[0]['id']}").status_code == 200
 
 
+def test_expense_duplicate_conflict_not_500(client):
+    """Regresja B6: expenses ma UNIQUE(vehicle_id, date, cost, description)
+    (klucz deduplikacji importów) bez try/except w web.py — w
+    przeciwieństwie do fillups (patrz test_fillup_validation_and_conflict),
+    gdzie IntegrityError jest łapany i zwraca 409. Realny scenariusz: dwie
+    identyczne opłaty parkingowe wpisane o tej samej minucie."""
+    body = {"date": "2025-01-10T09:00", "cost": 25.0,
+            "description": "Parking centrum"}
+    assert client.post("/api/expenses", json=body).status_code == 201
+    r = client.post("/api/expenses", json=body)
+    assert r.status_code == 409
+    assert r.is_json
+
+
+def test_expense_update_duplicate_conflict_not_500(client):
+    r1 = client.post("/api/expenses", json={
+        "date": "2025-01-10T09:00", "cost": 25.0, "description": "A"})
+    r2 = client.post("/api/expenses", json={
+        "date": "2025-01-11T09:00", "cost": 30.0, "description": "B"})
+    eid2 = r2.get_json()["id"]
+    # Edycja B tak, żeby zderzyć się dokładnie z A.
+    r = client.put(f"/api/expenses/{eid2}", json={
+        "date": "2025-01-10T09:00", "cost": 25.0, "description": "A"})
+    assert r.status_code == 409
+    assert r.is_json
+    assert r1.status_code == 201  # sanity: oba wyjściowe wpisy się utworzyły
+
+
 def test_csv_import_and_export(client):
     r = client.post("/api/import/csv", data={
         "file": (__import__("io").BytesIO(FIXTURE), "export.csv")})

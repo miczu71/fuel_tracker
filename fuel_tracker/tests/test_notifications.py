@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from fuel_tracker import notifications
+from fuel_tracker import settings as settingsm
 
 NOW = datetime(2026, 7, 10, 12, 0, 0)
 
@@ -23,7 +24,6 @@ def notify(sent):
 
 def _settings(**over):
     s = {
-        "monthly_fuel_budget": 800.0,
         "notify_service": "notify.mobile_app_test",
         "alert_budget_enabled": 1,
         "alert_cheap_fuel_enabled": 1,
@@ -129,9 +129,37 @@ def test_disabled_alert_is_silent(conn, vehicle_id, notify, sent):
 
 
 def test_zero_budget_is_silent(conn, vehicle_id, notify, sent):
-    notifications.evaluate(conn, _settings(monthly_fuel_budget=0.0),
+    # Budżet żyje w vehicles.monthly_fuel_budget (0.11.0), nie w settings —
+    # queries.sensor_values() zwraca budget_left_month=None, gdy budżet
+    # pojazdu jest zerowy/pusty. To jedyna bramka, jaka istnieje (patrz B1).
+    notifications.evaluate(conn, _settings(),
                            _values(budget_left_month=None), vehicle_id, notify, now=NOW)
     assert sent == []
+
+
+def test_budget_alert_works_with_real_settings_dict(conn, vehicle_id, notify, sent):
+    """Regresja B1: budżet dziś żyje w vehicles.monthly_fuel_budget (migracja
+    #9, 0.11.0), nie w settings. evaluate() musi działać na PRAWDZIWYM
+    słowniku z settings.get_settings() — nie tylko na ręcznym fixture
+    _settings() z tego pliku, który przez lata trzymał klucz
+    'monthly_fuel_budget' usunięty tą migracją i maskował fakt, że
+    _budget_state() bramkował się na kluczu, którego produkcja już nie
+    wysyła (alert był martwy na żywym add-onie od 2026-07-12 do fixa)."""
+    real_settings = settingsm.get_settings(conn)
+    assert "monthly_fuel_budget" not in real_settings
+    notifications.evaluate(
+        conn, real_settings | {"notify_service": "notify.mobile_app_test"},
+        _values(budget_left_month=80.0), vehicle_id, notify, now=NOW)
+    assert len(sent) == 1
+    assert sent[0][1] == "⛽ Budżet paliwowy na wyczerpaniu"
+
+
+def test_settings_fixture_matches_real_settings_contract():
+    """Strażnik: klucze fixture'a _settings() muszą być podzbiorem
+    settings.SETTINGS_TYPES — inaczej test może przejść na polu, którego
+    produkcja nigdy nie widzi (dokładnie tak ten test-fixture zamaskował B1
+    przez cztery wydania)."""
+    assert set(_settings()) <= set(settingsm.SETTINGS_TYPES)
 
 
 def test_cheap_fuel_notifies_at_delta(conn, vehicle_id, notify, sent):
