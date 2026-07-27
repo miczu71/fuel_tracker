@@ -100,6 +100,16 @@ def test_sensor_values_no_region_data(conn):
     assert v["price_vs_region"] is None
 
 
+def test_sensor_values_last_reset_markers_are_first_of_month_and_year(conn):
+    # 0.14.0: month_fuel_cost/ytd_fuel_cost dostają last_reset dla
+    # state_class total w publisher.py — bez tego reset licznika (rollover
+    # miesiąca/roku) mylił silnik statystyk HA.
+    vid = dbm.ensure_vehicle(conn, "Testowy", 66.0, "PB95")
+    v = queries.sensor_values(conn, vid, 0.0, now=datetime(2026, 7, 6))
+    assert v["month_fuel_cost_last_reset"] == "2026-07-01T00:00:00+02:00"
+    assert v["ytd_fuel_cost_last_reset"] == "2026-01-01T00:00:00+01:00"
+
+
 def test_sensor_values_lease_margin_uses_provided_odometer(conn):
     vid = dbm.ensure_vehicle(conn, "Testowy", 66.0, "PB95")
     v = queries.sensor_values(

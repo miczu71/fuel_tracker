@@ -63,6 +63,11 @@ def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
         "avg_price_per_l": s.avg_price_per_l,
         "expenses_total": round(sum(e["cost"] for e in expenses), 2),
         "month_fuel_cost": month_cost,
+        # Znaczniki resetu (0.14.0) dla state_class 'total' + last_reset_value_template
+        # w publisher.py — bez nich silnik statystyk HA traktował zerowanie
+        # tych liczników jako reset i dopisywał całą nową wartość do sumy LTS.
+        "month_fuel_cost_last_reset": _iso_local(f"{month}-01 00:00"),
+        "ytd_fuel_cost_last_reset": _iso_local(f"{now:%Y}-01-01 00:00"),
         "budget_left_month": round(monthly_budget - month_cost, 2)
                              if monthly_budget else None,
         # Tankowania opłacone prywatnie — zastępuje ręczny

@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.14.0
+
+- **Fix: sensory MQTT `state_class` niezgodny z charakterem wartości psuł
+  statystyki długoterminowe (LTS) w HA.** Wszystkie sensory `monetary`
+  publikowały `state_class: "total"`, czyli "licznik, który tylko rośnie" —
+  dla `budget_left_month` (maleje w miesiącu), `month_forecast_cost` i
+  `last_fillup_cost` (skaczą w obie strony) silnik statystyk HA zaliczał
+  każdy spadek jako reset licznika i dopisywał całą nową wartość do sumy LTS
+  zamiast realnego przyrostu. Te trzy sensory tracą teraz `state_class`
+  (dozwolone: `device_class: monetary` nie wymaga `state_class`, walidator HA
+  odrzuca tylko niekompatybilny typ, nie jego brak) — bieżący stan i wykresy
+  "na teraz" bez zmian, tylko wykresy historyczne przestają kłamać.
+- **Fix: `month_fuel_cost` i `ytd_fuel_cost` (liczniki miesięczny/roczny) nie
+  miały `last_reset`**, więc ich comiesięczne/coroczne zerowanie też mylnie
+  wchodziło do sumy LTS jako "reset". Zostają na `state_class: "total"`, ale
+  discovery MQTT dostaje `value_template` + `last_reset_value_template`
+  (payload JSON zamiast gołej liczby), a `queries.sensor_values()` liczy
+  znaczniki resetu (1. dzień miesiąca / 1 stycznia, ze strefą `TZ`).
+- **Wymagane ręczne czyszczenie statystyk po aktualizacji** (Narzędzia
+  deweloperskie → Statystyki): dla `budget_left_month`, `month_forecast_cost`,
+  `last_fillup_cost` HA zgłosi "encja nie ma już state_class" — skasować ich
+  historię. Dla `month_fuel_cost`/`ytd_fuel_cost` też warto skasować dawną
+  (błędną) historię LTS, żeby nowy cykl `last_reset` ruszył czysto.
+- Dotknięte encje: `sensor.<pojazd>_fuel_budget_left_month`,
+  `sensor.<pojazd>_fuel_month_forecast_cost`,
+  `sensor.<pojazd>_fuel_last_fillup_cost`,
+  `sensor.<pojazd>_fuel_month_fuel_cost`,
+  `sensor.<pojazd>_fuel_ytd_fuel_cost`. Wartości stanu (state) tych encji się
+  nie zmieniają — zmieniają się wyłącznie ich atrybuty/discovery i to, jak HA
+  agreguje ich historię.
+- Zero zmian w formacie danych/API poza opisanym wyżej. 268 + 5 nowych testów
+  regresyjnych zielonych.
+
 ## 0.13.1
 
 - **Fix (krytyczny): alert budżetu paliwowego martwy od 0.11.0.**

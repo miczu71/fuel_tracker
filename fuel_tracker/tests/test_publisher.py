@@ -131,11 +131,61 @@ def test_no_monetary_on_per_unit_sensors():
             assert s.device_class is None, s.slug
 
 
-def test_monetary_requires_state_class_total():
-    # Walidator HA: device_class monetary dopuszcza tylko state_class total.
+# 0.14.0: sensory monetary z natury malejące/wahające się (budget_left_month,
+# month_forecast_cost, last_fillup_cost) NIE mogą mieć state_class 'total' —
+# HA zaliczyłby każdy spadek jako reset licznika i zepsuł sumę LTS (dokładnie
+# ten mechanizm zepsuł kartę wykresu utility_meter "koszt paliwa miesięcznie").
+_NON_CUMULATIVE_MONETARY = {"budget_left_month", "month_forecast_cost",
+                           "last_fillup_cost"}
+
+
+def test_non_cumulative_monetary_sensors_have_no_state_class():
     for s in publisher._SENSORS:
-        if s.device_class == "monetary":
+        if s.slug in _NON_CUMULATIVE_MONETARY:
+            assert s.device_class == "monetary", s.slug
+            assert s.state_class is None, s.slug
+
+
+def test_cumulative_monetary_sensors_require_state_class_total():
+    # Walidator HA: sensor z last_reset_value_template MUSI mieć state_class
+    # total; sensory bez cyklu resetu (total_cost i inne dożywotnie sumy)
+    # też zostają na 'total' — dopuszczalne bo naprawdę tylko rosną.
+    for s in publisher._SENSORS:
+        if s.device_class == "monetary" and s.slug not in _NON_CUMULATIVE_MONETARY:
             assert s.state_class == "total", s.slug
+
+
+def test_last_reset_sensors_get_value_and_last_reset_templates():
+    payloads = publisher.discovery_payloads("fuel_tracker", "AutoA Fuel", "0.14.0")
+    for slug in ("month_fuel_cost", "ytd_fuel_cost"):
+        topic = f"homeassistant/sensor/fuel_tracker/{slug}/config"
+        p = payloads[topic]
+        assert p["value_template"] == "{{ value_json.value }}"
+        assert p["last_reset_value_template"] == "{{ value_json.last_reset }}"
+        assert p["state_class"] == "total"
+
+    # Sensory bez last_reset_key nie dostają żadnego z tych dwóch pól.
+    topic = "homeassistant/sensor/fuel_tracker/total_cost/config"
+    p = payloads[topic]
+    assert "value_template" not in p
+    assert "last_reset_value_template" not in p
+
+
+def test_render_values_wraps_last_reset_sensors_in_json():
+    out = publisher.render_values({
+        "month_fuel_cost": 783.8,
+        "month_fuel_cost_last_reset": "2026-07-01T00:00:00+02:00",
+        "ytd_fuel_cost": 4166.32,
+        "ytd_fuel_cost_last_reset": "2026-01-01T00:00:00+01:00",
+    })
+    import json as _json
+    assert _json.loads(out["month_fuel_cost"]) == {
+        "value": 783.8, "last_reset": "2026-07-01T00:00:00+02:00"}
+    assert _json.loads(out["ytd_fuel_cost"]) == {
+        "value": 4166.32, "last_reset": "2026-01-01T00:00:00+01:00"}
+    # Klucze last_reset_key nie stają się osobnymi topikami.
+    assert "month_fuel_cost_last_reset" not in out
+    assert "ytd_fuel_cost_last_reset" not in out
 
 
 def test_publish_before_connect_flushes_in_on_connect():

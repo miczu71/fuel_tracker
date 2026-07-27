@@ -28,12 +28,27 @@ class _Sensor(NamedTuple):
     device_class: Optional[str]
     state_class: Optional[str]
     icon: Optional[str]
+    # Klucz w dict-cie `values`, pod którym render_values() znajdzie znacznik
+    # resetu (ISO datetime). Ustawiony ⟹ sensor publikuje JSON {"value":...,
+    # "last_reset":...} i discovery dostaje value_template +
+    # last_reset_value_template (0.14.0 — patrz komentarz przy state_class niżej).
+    last_reset_key: Optional[str] = None
 
 
 # Per-litr i per-km NIE dostają device_class 'monetary' — HA wymaga wtedy
 # jednostki walutowej (PLN), a 'PLN/L' blokuje statystyki długoterminowe.
-# Sensory monetary muszą mieć state_class 'total' — jedyna kombinacja
-# dopuszczana przez walidator HA (inne logują "impossible considering device class").
+#
+# state_class 'total' (0.14.0): tylko dla liczników, które od powstania auta
+# WYŁĄCZNIE rosną (total_cost/expenses_total/self_paid_fuel_total) albo mają
+# last_reset_key opisujący ich cykl (month_fuel_cost/ytd_fuel_cost). Reszta
+# sensorów monetary (budget_left_month maleje, month_forecast_cost i
+# last_fillup_cost skaczą w obie strony) zostaje bez state_class — HA
+# dopuszcza device_class monetary bez state_class, walidator odrzuca tylko
+# state_class niekompatybilny z monetary (np. 'measurement'), nie jego brak.
+# Bez last_reset/bez state_class silnik statystyk HA traktował każdy spadek
+# (rollover miesiąca/roku) jako reset licznika i dopisywał całą nową wartość
+# do sumy LTS — dokładnie ten mechanizm zepsuł kartę wykresu w utility_meter
+# "koszt paliwa miesięcznie" (naprawione osobno korektą adjust_sum_statistics).
 _SENSORS: list[_Sensor] = [
     _Sensor("total_cost",           "Total Cost",           "PLN",      "monetary", "total",            "mdi:cash-multiple"),
     _Sensor("total_volume",         "Total Volume",         "L",        "volume",   "total_increasing", "mdi:fuel"),
@@ -46,18 +61,18 @@ _SENSORS: list[_Sensor] = [
     _Sensor("last_fillup_odometer", "Last Fillup Odometer", "km",       "distance", "measurement",      "mdi:counter"),
     _Sensor("last_fillup_price",    "Last Fillup Price",    "PLN/L",    None,       "measurement",      "mdi:tag-outline"),
     _Sensor("last_fillup_volume",   "Last Fillup Volume",   "L",        "volume",   "measurement",      "mdi:fuel"),
-    _Sensor("last_fillup_cost",     "Last Fillup Cost",     "PLN",      "monetary", "total",            "mdi:cash"),
+    _Sensor("last_fillup_cost",     "Last Fillup Cost",     "PLN",      "monetary", None,               "mdi:cash"),
     _Sensor("last_fillup_station",  "Last Fillup Station",  None,       None,       None,               "mdi:gas-station"),
     _Sensor("expenses_total",       "Expenses Total",       "PLN",      "monetary", "total",            "mdi:receipt"),
-    _Sensor("budget_left_month",    "Budget Left Month",    "PLN",      "monetary", "total",            "mdi:piggy-bank"),
-    _Sensor("month_fuel_cost",      "Month Fuel Cost",      "PLN",      "monetary", "total",            "mdi:calendar-today"),
+    _Sensor("budget_left_month",    "Budget Left Month",    "PLN",      "monetary", None,               "mdi:piggy-bank"),
+    _Sensor("month_fuel_cost",      "Month Fuel Cost",      "PLN",      "monetary", "total",            "mdi:calendar-today", "month_fuel_cost_last_reset"),
     _Sensor("self_paid_fuel_total", "Self Paid Fuel Total", "PLN",      "monetary", "total",            "mdi:account-cash"),
     # 0.4.0 — ceny regionalne + statystyki
     _Sensor("region_fuel_price",    "Region Fuel Price",    "PLN/L",    None,       "measurement",      "mdi:gas-station-in-use"),
     _Sensor("price_vs_region",      "Price Vs Region",      "PLN/L",    None,       "measurement",      "mdi:scale-balance"),
     _Sensor("estimated_range_km",   "Estimated Range",      "km",       "distance", "measurement",      "mdi:map-marker-path"),
-    _Sensor("month_forecast_cost",  "Month Forecast Cost",  "PLN",      "monetary", "total",            "mdi:chart-timeline-variant"),
-    _Sensor("ytd_fuel_cost",        "YTD Fuel Cost",        "PLN",      "monetary", "total",            "mdi:calendar-range"),
+    _Sensor("month_forecast_cost",  "Month Forecast Cost",  "PLN",      "monetary", None,               "mdi:chart-timeline-variant"),
+    _Sensor("ytd_fuel_cost",        "YTD Fuel Cost",        "PLN",      "monetary", "total",            "mdi:calendar-range", "ytd_fuel_cost_last_reset"),
     _Sensor("projected_annual_km",  "Projected Annual Km",  "km",       "distance", "measurement",      "mdi:speedometer"),
     _Sensor("best_station",         "Best Station",         None,       None,       None,               "mdi:trophy"),
     # 0.8.0 — leasing per auto (aktywny pojazd)
@@ -92,10 +107,21 @@ def _discovery_topics(device_id: str) -> list[str]:
 
 
 def render_values(values: dict) -> dict[str, str]:
-    """Mapa slug → payload; brakujące wartości publikujemy jako 'unknown'."""
+    """Mapa slug → payload; brakujące wartości publikujemy jako 'unknown'.
+
+    Sensory z last_reset_key (0.14.0) dostają JSON {"value":..., "last_reset":...}
+    zamiast gołego skalara — discovery czyta je przez value_template /
+    last_reset_value_template. Klucz last_reset_key sam nie staje się osobnym
+    topikiem, jest tylko źródłem drugiego pola w tym JSON-ie."""
     out: dict[str, str] = {}
     for s in _SENSORS:
         v = values.get(s.slug)
+        if s.last_reset_key is not None:
+            out[s.slug] = json.dumps({
+                "value": round(v, 4) if isinstance(v, float) else v,
+                "last_reset": values.get(s.last_reset_key),
+            })
+            continue
         if v is None:
             out[s.slug] = "unknown"
         elif isinstance(v, float):
@@ -132,6 +158,9 @@ def discovery_payloads(device_id: str, device_name: str,
             p["state_class"] = s.state_class
         if s.icon:
             p["icon"] = s.icon
+        if s.last_reset_key is not None:
+            p["value_template"] = "{{ value_json.value }}"
+            p["last_reset_value_template"] = "{{ value_json.last_reset }}"
         payloads[_disc_topic(device_id, s.slug)] = p
     return payloads
 

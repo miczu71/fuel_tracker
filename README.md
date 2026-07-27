@@ -144,37 +144,44 @@ Stany**.
 > `sensor.<nazwa_urządzenia>_*` (realny `entity_id` zależy od nazwy nowego
 > pojazdu — zweryfikuj w **Narzędzia deweloperskie → Stany** po dodaniu).
 
-| Encja | Jednostka | Opis |
-|---|---|---|
-| `sensor.<pojazd>_fuel_total_cost` | PLN | Suma wydatków na paliwo (wszystkie tankowania) |
-| `sensor.<pojazd>_fuel_total_volume` | L | Suma zatankowanych litrów |
-| `sensor.<pojazd>_fuel_fillup_count` | — | Liczba tankowań |
-| `sensor.<pojazd>_fuel_avg_consumption` | L/100km | Średnie spalanie (Σvol/Σdist po segmentach) |
-| `sensor.<pojazd>_fuel_last_consumption` | L/100km | Spalanie ostatniego segmentu pełny→pełny |
-| `sensor.<pojazd>_fuel_cost_per_km` | PLN/km | Koszt paliwa na kilometr |
-| `sensor.<pojazd>_fuel_avg_price_per_l` | PLN/L | Średnia cena litra |
-| `sensor.<pojazd>_fuel_last_fillup_date` | timestamp | Data ostatniego tankowania |
-| `sensor.<pojazd>_fuel_last_fillup_odometer` | km | Odometr przy ostatnim tankowaniu |
-| `sensor.<pojazd>_fuel_last_fillup_price` | PLN/L | Cena litra przy ostatnim tankowaniu |
-| `sensor.<pojazd>_fuel_last_fillup_volume` | L | Litry ostatniego tankowania |
-| `sensor.<pojazd>_fuel_last_fillup_cost` | PLN | Kwota ostatniego tankowania |
-| `sensor.<pojazd>_fuel_last_fillup_station` | — | Stacja ostatniego tankowania |
-| `sensor.<pojazd>_fuel_expenses_total` | PLN | Suma wydatków pozapaliwowych |
-| `sensor.<pojazd>_fuel_budget_left_month` | PLN | Pozostały budżet paliwowy w bieżącym miesiącu |
-| `sensor.<pojazd>_fuel_month_fuel_cost` | PLN | Wydatki na paliwo w bieżącym miesiącu |
-| `sensor.<pojazd>_fuel_self_paid_fuel_total` | PLN | Suma tankowań opłaconych prywatnie („Zapłacone przeze mnie") |
-| `sensor.<pojazd>_fuel_region_fuel_price` | PLN/L | Cena regionalna paliwa (`price_region`, autocentrum.pl) |
-| `sensor.<pojazd>_fuel_price_vs_region` | PLN/L | Moja ostatnia cena − cena regionalna (ujemna = taniej) |
-| `sensor.<pojazd>_fuel_estimated_range` | km | Zasięg na pełnym baku przy średnim spalaniu |
-| `sensor.<pojazd>_fuel_month_forecast_cost` | PLN | Prognoza kosztu paliwa w bieżącym miesiącu |
-| `sensor.<pojazd>_fuel_ytd_fuel_cost` | PLN | Wydatki na paliwo od początku roku |
-| `sensor.<pojazd>_fuel_projected_annual_km` | km | Roczne tempo przebiegu (ekstrapolacja historii) |
-| `sensor.<pojazd>_fuel_best_station` | — | Stacja z najniższą średnią ceną (min. 2 tankowania) |
-| `sensor.<pojazd>_fuel_lease_km_margin` | km | Zapas km do limitu leasingu aktywnego pojazdu (ta sama krzywa co dawny `sensor.odo_vs_budget`) |
-| `sensor.<pojazd>_fuel_lease_depletion_date` | date | Prognoza daty wyczerpania limitu km przy obecnym tempie |
+| Encja | Jednostka | `state_class` | Opis |
+|---|---|---|---|
+| `sensor.<pojazd>_fuel_total_cost` | PLN | total | Suma wydatków na paliwo (wszystkie tankowania) |
+| `sensor.<pojazd>_fuel_total_volume` | L | total_increasing | Suma zatankowanych litrów |
+| `sensor.<pojazd>_fuel_fillup_count` | — | total_increasing | Liczba tankowań |
+| `sensor.<pojazd>_fuel_avg_consumption` | L/100km | measurement | Średnie spalanie (Σvol/Σdist po segmentach) |
+| `sensor.<pojazd>_fuel_last_consumption` | L/100km | measurement | Spalanie ostatniego segmentu pełny→pełny |
+| `sensor.<pojazd>_fuel_cost_per_km` | PLN/km | measurement | Koszt paliwa na kilometr |
+| `sensor.<pojazd>_fuel_avg_price_per_l` | PLN/L | measurement | Średnia cena litra |
+| `sensor.<pojazd>_fuel_last_fillup_date` | timestamp | — | Data ostatniego tankowania |
+| `sensor.<pojazd>_fuel_last_fillup_odometer` | km | measurement | Odometr przy ostatnim tankowaniu |
+| `sensor.<pojazd>_fuel_last_fillup_price` | PLN/L | measurement | Cena litra przy ostatnim tankowaniu |
+| `sensor.<pojazd>_fuel_last_fillup_volume` | L | measurement | Litry ostatniego tankowania |
+| `sensor.<pojazd>_fuel_last_fillup_cost` | PLN | *(brak)* | Kwota ostatniego tankowania — skacze w obie strony, bez wykresu historycznego |
+| `sensor.<pojazd>_fuel_last_fillup_station` | — | — | Stacja ostatniego tankowania |
+| `sensor.<pojazd>_fuel_expenses_total` | PLN | total | Suma wydatków pozapaliwowych |
+| `sensor.<pojazd>_fuel_budget_left_month` | PLN | *(brak)* | Pozostały budżet paliwowy w bieżącym miesiącu — maleje, bez wykresu historycznego |
+| `sensor.<pojazd>_fuel_month_fuel_cost` | PLN | total (`last_reset` co miesiąc) | Wydatki na paliwo w bieżącym miesiącu |
+| `sensor.<pojazd>_fuel_self_paid_fuel_total` | PLN | total | Suma tankowań opłaconych prywatnie („Zapłacone przeze mnie") |
+| `sensor.<pojazd>_fuel_region_fuel_price` | PLN/L | measurement | Cena regionalna paliwa (`price_region`, autocentrum.pl) |
+| `sensor.<pojazd>_fuel_price_vs_region` | PLN/L | measurement | Moja ostatnia cena − cena regionalna (ujemna = taniej) |
+| `sensor.<pojazd>_fuel_estimated_range` | km | measurement | Zasięg na pełnym baku przy średnim spalaniu |
+| `sensor.<pojazd>_fuel_month_forecast_cost` | PLN | *(brak)* | Prognoza kosztu paliwa w bieżącym miesiącu — waha się w obie strony, bez wykresu historycznego |
+| `sensor.<pojazd>_fuel_ytd_fuel_cost` | PLN | total (`last_reset` co rok) | Wydatki na paliwo od początku roku |
+| `sensor.<pojazd>_fuel_projected_annual_km` | km | measurement | Roczne tempo przebiegu (ekstrapolacja historii) |
+| `sensor.<pojazd>_fuel_best_station` | — | — | Stacja z najniższą średnią ceną (min. 2 tankowania) |
+| `sensor.<pojazd>_fuel_lease_km_margin` | km | measurement | Zapas km do limitu leasingu aktywnego pojazdu (ta sama krzywa co dawny `sensor.odo_vs_budget`) |
+| `sensor.<pojazd>_fuel_lease_depletion_date` | date | — | Prognoza daty wyczerpania limitu km przy obecnym tempie |
 
 > Rzeczywiste `entity_id` zależą od nazwy urządzenia — po pierwszym starcie
 > zweryfikuj je w **Narzędzia deweloperskie → Stany**.
+
+> **Wykresy historyczne (0.14.0):** tylko sensory z kolumną `state_class` w
+> tabeli wyżej nadają się na karty `statistics-graph`/`history-graph` z
+> agregacją sumy. Sensory oznaczone *(brak)* (`budget_left_month`,
+> `month_forecast_cost`, `last_fillup_cost`) z natury maleją albo skaczą w
+> obie strony — pokazuj je jako bieżącą wartość (`entities`/`glance`/gauge),
+> nie jako wykres sumy w czasie.
 
 ## Powiadomienia (wbudowane od 0.9.0)
 
