@@ -160,13 +160,21 @@ Nowy `tests/test_vision.py` + rozszerzenie `tests/test_receipts.py`, wszystko na
 
 Cała istniejąca suite musi zostać zielona.
 
-## Krok 6 — weryfikacja E2E przed wydaniem
+## Krok 6 — weryfikacja E2E przed wydaniem — WYNIK: ZAMKNIĘTE
 
-Oba fixtures przez żywy łańcuch, porównanie pól ze zdjęciem. **Otwarta pozycja:** na
-`receipt_orlen_fiscal.jpg` model zwrócił `receipt_type: "fleet_card"` i datę **2020-07-01**
-(drugi fixture z tej samej stacji ma 2026). Nie zweryfikowałem tego na oryginale — w rozdzielczości,
-w jakiej widzę ten plik, nie odczytam paragonu. Jeśli to błędny odczyt, poprawka idzie w `PROMPT`
-(rozróżnienie formatów), nie w kod, i wtedy dochodzi asercja do testów.
+Oba fixtures przez żywy `receipts.analyze()` (prawdziwa sieć, oba klucze), gemini jako primary
+zadziałał za pierwszym razem na obu:
+
+- `receipt_orlen_fleet.jpg` → 2026-07-03 15:56 / 31462 km / 52,47 L / 357,85 PLN / ORLEN Będzino
+  — identyczne z testami providerów sprzed implementacji.
+- `receipt_orlen_fiscal.jpg` → `fleet_card` / 2020-07-01 11:42 / 30826 km / 12,64 L / 86,20 PLN.
+
+**Otwarta pozycja zamknięta:** sprawdzone wymiary pikselowe obu plików —
+`receipt_orlen_fleet.jpg` to 651×869, `receipt_orlen_fiscal.jpg` to **152×203** (miniaturka,
+~18× mniej pikseli). To wyjaśnia niepewny odczyt — plik jest za mały, by cokolwiek wiarygodnie
+rozpoznać (nie odczytałem go wizualnie sam, z tego samego powodu). **To nie jest błąd promptu
+ani kodu** — realne zdjęcia z telefonu mają rozdzielczość rzędu tysięcy pikseli, jak fixture
+`fleet`, który czytany był bezbłędnie na wszystkich trzech ogniwach. `PROMPT` pozostaje bez zmian.
 
 ## Krok 7 — wydanie 0.15.0
 

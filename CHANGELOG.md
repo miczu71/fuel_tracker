@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.15.0
+
+- **Fix: skaner paragonów padał z „błędem komunikacji z LLM Vision" bez
+  prawdziwego powodu.** Diagnoza: konto Google za jedynym providerem
+  llmvision miało wyczerpane kredyty (`ServiceValidationError`) — HA
+  oddawało gołe HTTP 500, `ha_client.call_service()` zwracał `None`, a
+  add-on pokazywał generyczne „nie odpowiedziała". Przy okazji wykryto,
+  że fallback modeli w `receipts.analyze()` był **martwy od 0.5.1**:
+  pętla `for model in MODELS` na HTTP 500/`None` rzucała natychmiast
+  zamiast próbować kolejny model — wykonywała się zawsze tylko raz.
+- **Nowy łańcuch trzech providerów** (`fuel_tracker/vision.py`, nowy
+  moduł): Gemini bezpośrednio (`gemini_api_key`) → lokalny router
+  OpenAI-compatible (`local_llm_base_url`/`local_llm_api_key`, np.
+  freellmapi) → istniejące `llmvision` przez HA jako ostatnie ogniwo.
+  Ogniwo, które zawiedzie, oddaje głos następnemu; `ReceiptError` dopiero
+  gdy wszystkie padną, z powodami wszystkich prób sklejonymi w jeden
+  komunikat (prawdziwa treść błędu providera, nie generyk). Oba nowe
+  ogniwa opcjonalne — puste pole w opcjach add-onu = ogniwo pomijane,
+  zachowanie identyczne z ≤0.14.0.
+- **Fix: `gemini-2.5-flash-lite` w liście modeli zwracał HTTP 404** („no
+  longer available to new users") na nowych kluczach Gemini — jedyny
+  „zapasowy" model add-onu był od jakiegoś czasu martwy. Zastąpiony
+  `gemini-3.5-flash-lite` (zweryfikowany na realnym paragonie).
+- Nowe opcje: `gemini_api_key`, `gemini_model`, `local_llm_base_url`,
+  `local_llm_api_key`, `local_llm_model` (domyślnie `gemini-3.1-flash-lite`).
+  Zero zmian we froncie — `static/app.js` już renderował `error` z
+  odpowiedzi 502, więc naprawiony komunikat dociera bez modyfikacji UI.
+- Diagnoza i plan w `docs/PLAN-0.15.0-vision.md`, w tym pełny zapis
+  weryfikacji empirycznej (realne wywołania obu nowych ogniw na
+  fixturach paragonów przed wdrożeniem).
+
 ## 0.14.0
 
 - **Fix: sensory MQTT `state_class` niezgodny z charakterem wartości psuł

@@ -202,6 +202,13 @@ def main() -> None:
             "drivvo_password": _env("DRIVVO_PASSWORD"),
             "drivvo_vehicle_id": int(_env("DRIVVO_VEHICLE_ID", "0") or 0),
             "odo_budget_entity": _env("ODO_BUDGET_ENTITY"),
+            # Łańcuch providerów skanera paragonów (0.15.0) — puste pole
+            # w opcjach Supervisora = ogniwo pomijane, patrz receipts.analyze().
+            "gemini_api_key": _env("GEMINI_API_KEY"),
+            "gemini_model": _env("GEMINI_MODEL"),
+            "local_llm_base_url": _env("LOCAL_LLM_BASE_URL"),
+            "local_llm_api_key": _env("LOCAL_LLM_API_KEY"),
+            "local_llm_model": _env("LOCAL_LLM_MODEL", "gemini-3.1-flash-lite"),
             "share_dir": share_dir,
         },
         on_data_change=publish_sensors,

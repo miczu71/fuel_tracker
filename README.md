@@ -19,13 +19,19 @@ pełnymi bakami, sensory MQTT discovery i mobilny web UI po polsku przez ingress
   notatki; edycja i usuwanie.
 - **Parser paragonów ze zdjęcia (LLM vision)** — „📷 Zeskanuj paragon"
   w formularzu: w aplikacji mobilnej HA otwiera aparat, działa też galeria.
-  Analiza przez istniejącą integrację `llmvision` (provider wykrywany
-  automatycznie, modele `gemini-3.1-flash-lite` + fallback) — wynik prefilluje formularz,
-  zapis zawsze ręczny. Rozpoznaje paragon fiskalny **i** „Dowód wydania —
-  karta FLOTA ORLEN" (z przebiegiem ze stanu licznika); pozycje
-  niepaliwowe z paragonu mieszanego mogą jednym kliknięciem utworzyć
-  wydatek „Płyny". Zdjęcie zostaje jako załącznik wpisu (📷 na liście),
-  przechowywane w `<backup_share>/attachments/`.
+  **Od 0.15.0 łańcuch trzech niezależnych providerów** — Gemini bezpośrednio
+  (klucz w opcjach add-onu) → lokalny router OpenAI-compatible (np. freellmapi)
+  → istniejąca integracja `llmvision` (provider wykrywany automatycznie) jako
+  ostatnia deska ratunku; ogniwo, które zawiedzie (limit, brak kredytów,
+  awaria sieci), oddaje głos następnemu, a komunikat błędu pokazuje
+  **prawdziwy powód od providera**, nie generyczne „nie odpowiedziała".
+  Każde skonfigurowane ogniwo próbuje kolejno modeli `gemini-3.1-flash-lite`
+  + `gemini-3.5-flash-lite`. Wynik prefilluje formularz, zapis zawsze ręczny.
+  Rozpoznaje paragon fiskalny **i** „Dowód wydania — karta FLOTA ORLEN"
+  (z przebiegiem ze stanu licznika); pozycje niepaliwowe z paragonu
+  mieszanego mogą jednym kliknięciem utworzyć wydatek „Płyny". Zdjęcie
+  zostaje jako załącznik wpisu (📷 na liście), przechowywane
+  w `<backup_share>/attachments/`.
 - **Statystyki spalania** — spalanie L/100km liczone segmentami między
   tankowaniami do pełna (partiale wliczane do segmentu), średnia ogólna
   Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne
@@ -249,6 +255,14 @@ powyższe sensory wystarczą jako dane wejściowe.
 > każdego pojazdu (karta „Pojazdy"). Przy aktualizacji z ≤0.10.x te
 > wartości są automatycznie kopiowane z globalnych ustawień do
 > istniejącego pojazdu (migracja #9).
+>
+> **Od 0.15.0:** parser paragonów to łańcuch trzech providerów —
+> `gemini_api_key`/`gemini_model` (Gemini bezpośrednio) i
+> `local_llm_base_url`/`local_llm_api_key`/`local_llm_model` (lokalny router
+> OpenAI-compatible) to nowe, **opcjonalne** ogniwa; puste pole = ogniwo
+> pomijane. Trzecie ogniwo (integracja `llmvision` w HA) działa jak dotąd,
+> bez zmian w opcjach. Te trzy pola są techniczne (wymagają restartu
+> add-onu po zmianie), bez odpowiednika w Ustawieniach.
 
 | Opcja | Domyślnie | Opis |
 |---|---|---|
@@ -263,6 +277,11 @@ powyższe sensory wystarczą jako dane wejściowe.
 | `odo_budget_entity` | *(puste)* | Opcjonalna encja HA z własnym wyliczeniem zapasu km leasingu — tylko do porównania z wyliczeniem add-onu (strona Statystyki) |
 | `drivvo_email` / `drivvo_password` | — | Konto Drivvo do jednorazowego importu |
 | `drivvo_vehicle_id` | `0` | ID pojazdu w Drivvo (`0` = pierwszy z konta) |
+| `gemini_api_key` | *(puste)* | Klucz Google Gemini do skanera paragonów (ogniwo 1/3, bezpośrednio, bez llmvision) — puste = ogniwo pomijane |
+| `gemini_model` | *(puste)* | Model do pierwszej próby na ogniwie Gemini; puste = `gemini-3.1-flash-lite` z automatycznym fallbackiem na `gemini-3.5-flash-lite` |
+| `local_llm_base_url` | *(puste)* | URL lokalnego routera OpenAI-compatible do skanera paragonów (ogniwo 2/3), np. `http://192.168.0.106:3003/v1` — puste = ogniwo pomijane |
+| `local_llm_api_key` | *(puste)* | Klucz do powyższego routera |
+| `local_llm_model` | `gemini-3.1-flash-lite` | Model wywoływany na lokalnym routerze |
 | `notify_service` | *(puste)* | Usługa powiadomień dla wbudowanych alertów; pusta = alerty nie są wysyłane — wartość startowa, potem edycja w Ustawieniach (karta „Powiadomienia") |
 | `mqtt_host` / `mqtt_port` / `mqtt_user` / `mqtt_password` | `core-mosquitto` / `1883` | Broker MQTT |
 | `log_level` | `info` | `debug` / `info` / `warning` / `error` |

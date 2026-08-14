@@ -786,7 +786,7 @@ def create_app(db_path: str, config: dict,
         conn().commit()
         aid = cur.lastrowid
         try:
-            parsed = receipts.analyze(str(attach_dir / filename))
+            parsed = receipts.analyze(str(attach_dir / filename), config)
             norm = receipts.normalize(
                 parsed, viewing_vehicle()["fuel_type"])
         except receipts.ReceiptError as exc:

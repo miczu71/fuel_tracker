@@ -1,10 +1,14 @@
-"""Parser paragonów ze zdjęcia — llmvision (HA) + normalizacja wyniku.
+"""Parser paragonów ze zdjęcia — łańcuch trzech providerów vision (0.15.0,
+docs/PLAN-0.15.0-vision.md) + normalizacja wyniku.
 
 Zdjęcie ląduje w <backup_share>/attachments/ (katalog widoczny też
-z kontenera HA core jako /share/...), a analizę robi usługa
-llmvision.image_analyzer z response_format=json — reużywamy providera
-i klucza skonfigurowanego w integracji (provider wykrywany automatycznie
-przez config_entries, zero opcji add-onu).
+z kontenera HA core jako /share/...). analyze() próbuje po kolei:
+1. Gemini bezpośrednio (fuel_tracker.vision.call_gemini) — primary,
+2. lokalny router freellmapi (fuel_tracker.vision.call_local) — fallback,
+3. llmvision.image_analyzer przez HA (provider wykrywany automatycznie
+   przez config_entries) — ostatnie ogniwo, bez własnych opcji add-onu.
+Ogniwo, które zawiedzie, oddaje głos następnemu; ReceiptError dopiero gdy
+WSZYSTKIE zawiodą, z powodami wszystkich prób sklejonymi w jeden komunikat.
 
 Dwa znane formaty ORLEN (próbki w tests/fixtures/):
 - paragon fiskalny: nazwa paliwa, litry × cena/L, sekcja VAT;
@@ -20,18 +24,19 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import ha_client
+from . import ha_client, vision
 
 logger = logging.getLogger(__name__)
 
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
-# Jawne modele zamiast domyślnego z integracji: skonfigurowany tam
-# gemini-2.0-flash stracił darmową quotę (limit 0 od 2026), a 2.5-flash
-# ma już tylko 20 zapytań/dzień. Modele lite mają wysokie darmowe limity,
-# a paragon FLOTA parsują identycznie (zweryfikowane 2026-07-07).
-# Drugi model to fallback, gdy pierwszemu skończy się dzienna quota.
-MODELS = ("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
+# Modele wypróbowywane po kolei na ogniwach gemini/llmvision, gdy pierwszy
+# padnie (wyczerpana dzienna quota konkretnego modelu itp.) — paragon FLOTA
+# parsują identycznie (zweryfikowane 2026-07-07, ponownie 2026-08-14).
+# gemini-2.5-flash-lite USUNIĘTY 0.15.0: HTTP 404 „no longer available to
+# new users" na nowych kluczach (zmierzone empirycznie) — jedyny „zapasowy"
+# model był od jakiegoś czasu martwy, patrz docs/PLAN-0.15.0-vision.md.
+MODELS = ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
 
 # Schemat wymuszany na modelu (llmvision structure). Bez additionalProperties
 # — Gemini structured output nie przyjmuje tego pola w każdym wariancie.
@@ -104,48 +109,85 @@ def save_upload(file_storage, attach_dir: Path) -> str:
     return name
 
 
-def analyze(image_path: str) -> dict:
-    """Zdjęcie → surowy dict z modelu vision (llmvision przez HA API).
+def _llmvision_attempt(image_path: str, provider: str, model: str) -> dict | None:
+    """Jedna próba ogniwa llmvision (jeden model). None = porażka — HTTP
+    błąd (ha_client.call_service już zwraca None na >=400, patrz ha_client.py)
+    albo brak parsowalnego JSON w odpowiedzi. Naprawa 0.15.0: dawniej HTTP
+    błąd przerywał całą analyze() natychmiast (call_service()->None->raise),
+    więc pętla po MODELS w praktyce wykonywała się zawsze tylko raz."""
+    resp = ha_client.call_service(
+        "llmvision", "image_analyzer",
+        {
+            "provider": provider,
+            "model": model,
+            "message": PROMPT,
+            "image_file": image_path,
+            "include_filename": False,
+            "target_width": 1280,
+            "max_tokens": 1500,
+            "response_format": "json",
+            "structure": json.dumps(STRUCTURE, ensure_ascii=False),
+        },
+        return_response=True, timeout=90)
+    if resp is None:
+        return None
+    data = resp.get("service_response") or {}
+    parsed = data.get("structured_response")
+    if isinstance(parsed, str):
+        parsed = extract_json(parsed)
+    if not isinstance(parsed, dict):
+        parsed = extract_json(data.get("response_text") or "")
+    return parsed if isinstance(parsed, dict) else None
 
-    llmvision zgłasza wyczerpaną quotę i inne błędy providera tym samym
-    tekstem "Couldn't generate content" — dlatego przy braku JSON
-    ponawiamy z kolejnym modelem z listy zamiast diagnozować przyczynę.
+
+def analyze(image_path: str, config: dict) -> dict:
+    """Zdjęcie → surowy dict z modelu vision. Łańcuch trzech ogniw (0.15.0):
+    gemini -> local (freellmapi) -> llmvision. config to podzbiór opcji
+    Supervisora (gemini_api_key/gemini_model/local_llm_base_url/
+    local_llm_api_key/local_llm_model) — puste pole = ogniwo pomijane.
     """
+    config = config or {}
+    reasons: list[str] = []
+
+    gemini_key = (config.get("gemini_api_key") or "").strip()
+    if gemini_key:
+        configured = (config.get("gemini_model") or "").strip()
+        models = ([configured] if configured else []) + [
+            m for m in MODELS if m != configured]
+        for model in models:
+            try:
+                return vision.call_gemini(
+                    image_path, PROMPT, STRUCTURE,
+                    api_key=gemini_key, model=model)
+            except vision.VisionError as exc:
+                logger.warning("receipts: gemini (%s) nieudane — %s", model, exc)
+                reasons.append(str(exc))
+
+    local_base = (config.get("local_llm_base_url") or "").strip()
+    local_key = (config.get("local_llm_api_key") or "").strip()
+    if local_base and local_key:
+        model = (config.get("local_llm_model") or "gemini-3.1-flash-lite").strip()
+        try:
+            return vision.call_local(
+                image_path, PROMPT, STRUCTURE,
+                base_url=local_base, api_key=local_key, model=model)
+        except vision.VisionError as exc:
+            logger.warning("receipts: local (%s) nieudane — %s", model, exc)
+            reasons.append(str(exc))
+
     provider = ha_client.find_config_entry("llmvision")
-    if not provider:
-        raise ReceiptError(
-            "Brak skonfigurowanej integracji llmvision w HA — "
-            "parser paragonów jej wymaga")
-    for model in MODELS:
-        resp = ha_client.call_service(
-            "llmvision", "image_analyzer",
-            {
-                "provider": provider,
-                "model": model,
-                "message": PROMPT,
-                "image_file": image_path,
-                "include_filename": False,
-                "target_width": 1280,
-                "max_tokens": 1500,
-                "response_format": "json",
-                "structure": json.dumps(STRUCTURE, ensure_ascii=False),
-            },
-            return_response=True, timeout=90)
-        if resp is None:
-            raise ReceiptError("Usługa llmvision nie odpowiedziała — "
-                               "sprawdź logi HA")
-        data = resp.get("service_response") or {}
-        parsed = data.get("structured_response")
-        if isinstance(parsed, str):
-            parsed = extract_json(parsed)
-        if not isinstance(parsed, dict):
-            parsed = extract_json(data.get("response_text") or "")
-        if isinstance(parsed, dict):
-            return parsed
-        logger.warning("llmvision (%s): brak JSON w odpowiedzi: %s",
-                       model, str(data)[:300])
-    raise ReceiptError("Model nie zwrócił danych paragonu — "
-                       "spróbuj wyraźniejszego zdjęcia")
+    if provider:
+        for model in MODELS:
+            parsed = _llmvision_attempt(image_path, provider, model)
+            if parsed is not None:
+                return parsed
+            logger.warning("llmvision (%s): brak JSON/HTTP błąd w odpowiedzi", model)
+        reasons.append("llmvision: żaden model nie zwrócił danych paragonu "
+                       "(sprawdź logi HA — providera lub quotę)")
+    else:
+        reasons.append("llmvision: integracja nieskonfigurowana w HA")
+
+    raise ReceiptError("; ".join(reasons))
 
 
 def extract_json(text: str) -> dict | None:

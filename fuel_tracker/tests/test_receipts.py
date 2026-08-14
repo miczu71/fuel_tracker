@@ -84,6 +84,127 @@ def test_extract_json_from_fenced_text():
     assert receipts.extract_json("bez jsona") is None
 
 
+# ── analyze(): łańcuch providerów (0.15.0) ─────────────────────────────────
+# gemini (bezpośrednio) -> local (freellmapi) -> llmvision (przez HA).
+# Regresja: fallback modeli był martwy od 0.5.1 — call_service() na HTTP 500
+# zwracał None, analyze() rzucał natychmiast zamiast próbować kolejny model.
+
+FULL_CONFIG = {
+    "gemini_api_key": "gem-key", "gemini_model": "",
+    "local_llm_base_url": "http://192.168.0.106:3003/v1",
+    "local_llm_api_key": "local-key", "local_llm_model": "gemini-3.1-flash-lite",
+}
+
+
+def test_analyze_gemini_primary_succeeds_without_touching_other_links(monkeypatch):
+    monkeypatch.setattr(receipts.vision, "call_gemini",
+                        lambda *a, **kw: dict(FLEET_PARSED))
+    monkeypatch.setattr(receipts.vision, "call_local",
+                        lambda *a, **kw: pytest.fail("local nie powinno być wołane"))
+    monkeypatch.setattr(receipts.ha_client, "find_config_entry",
+                        lambda *a, **kw: pytest.fail("llmvision nie powinno być wołane"))
+
+    result = receipts.analyze("img.jpg", FULL_CONFIG)
+    assert result == FLEET_PARSED
+
+
+def test_analyze_falls_back_to_local_when_gemini_fails(monkeypatch):
+    monkeypatch.setattr(receipts.vision, "call_gemini",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            receipts.vision.VisionError("gemini: HTTP 429 — quota")))
+    monkeypatch.setattr(receipts.vision, "call_local",
+                        lambda *a, **kw: dict(FLEET_PARSED))
+    monkeypatch.setattr(receipts.ha_client, "find_config_entry",
+                        lambda *a, **kw: pytest.fail("llmvision nie powinno być wołane"))
+
+    result = receipts.analyze("img.jpg", FULL_CONFIG)
+    assert result == FLEET_PARSED
+
+
+def test_analyze_falls_back_to_llmvision_when_gemini_and_local_fail(monkeypatch):
+    monkeypatch.setattr(receipts.vision, "call_gemini",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            receipts.vision.VisionError("gemini: HTTP 429 — quota")))
+    monkeypatch.setattr(receipts.vision, "call_local",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            receipts.vision.VisionError("freellmapi: HTTP 502 — provider_error")))
+    monkeypatch.setattr(receipts.ha_client, "find_config_entry", lambda domain: "entry-1")
+    monkeypatch.setattr(receipts.ha_client, "call_service",
+                        lambda *a, **kw: {"service_response": {
+                            "structured_response": dict(FLEET_PARSED)}})
+
+    result = receipts.analyze("img.jpg", FULL_CONFIG)
+    assert result == FLEET_PARSED
+
+
+def test_analyze_skips_local_when_not_configured(monkeypatch):
+    monkeypatch.setattr(receipts.vision, "call_gemini",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            receipts.vision.VisionError("gemini: HTTP 429 — quota")))
+    monkeypatch.setattr(receipts.vision, "call_local",
+                        lambda *a, **kw: pytest.fail("local bez configu nie powinno być wołane"))
+    monkeypatch.setattr(receipts.ha_client, "find_config_entry", lambda domain: "entry-1")
+    monkeypatch.setattr(receipts.ha_client, "call_service",
+                        lambda *a, **kw: {"service_response": {
+                            "structured_response": dict(FLEET_PARSED)}})
+
+    cfg = dict(FULL_CONFIG, local_llm_base_url="", local_llm_api_key="")
+    result = receipts.analyze("img.jpg", cfg)
+    assert result == FLEET_PARSED
+
+
+def test_analyze_llmvision_tries_next_model_after_http_500(monkeypatch):
+    """Regresja martwego fallbacku (0.5.1-0.14.0): call_service zwracał None
+    na HTTP 500, analyze() rzucał natychmiast zamiast próbować drugi model."""
+    monkeypatch.setattr(receipts.vision, "call_gemini",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            receipts.vision.VisionError("gemini: brak klucza API")))
+    monkeypatch.setattr(receipts.ha_client, "find_config_entry", lambda domain: "entry-1")
+
+    calls = []
+    def fake_call_service(domain, service, data, **kw):
+        calls.append(data.get("model"))
+        if len(calls) == 1:
+            return None  # HTTP 500 z ha_client.call_service
+        return {"service_response": {"structured_response": dict(FLEET_PARSED)}}
+    monkeypatch.setattr(receipts.ha_client, "call_service", fake_call_service)
+
+    cfg = dict(FULL_CONFIG, local_llm_base_url="", local_llm_api_key="")
+    result = receipts.analyze("img.jpg", cfg)
+    assert result == FLEET_PARSED
+    assert len(calls) == 2  # pierwszy model padł, drugi zadziałał
+    assert calls[0] != calls[1]
+
+
+def test_analyze_all_links_fail_raises_with_all_reasons(monkeypatch):
+    monkeypatch.setattr(receipts.vision, "call_gemini",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            receipts.vision.VisionError("gemini: HTTP 429 — quota")))
+    monkeypatch.setattr(receipts.vision, "call_local",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            receipts.vision.VisionError("freellmapi: HTTP 502 — provider_error")))
+    monkeypatch.setattr(receipts.ha_client, "find_config_entry", lambda domain: "entry-1")
+    monkeypatch.setattr(receipts.ha_client, "call_service", lambda *a, **kw: None)
+
+    with pytest.raises(receipts.ReceiptError) as exc:
+        receipts.analyze("img.jpg", FULL_CONFIG)
+    msg = str(exc.value)
+    assert "gemini" in msg and "quota" in msg
+    assert "freellmapi" in msg and "provider_error" in msg
+
+
+def test_analyze_no_providers_configured_raises_clear_message(monkeypatch):
+    monkeypatch.setattr(receipts.ha_client, "find_config_entry", lambda domain: None)
+    with pytest.raises(receipts.ReceiptError):
+        receipts.analyze("img.jpg", {})
+
+
+def test_dead_model_gemini_2_5_flash_lite_not_in_models():
+    # HTTP 404 „no longer available to new users" na nowych kluczach (zmierzone
+    # 2026-08-14, docs/PLAN-0.15.0-vision.md Krok 0) — nie może wrócić do listy.
+    assert "gemini-2.5-flash-lite" not in receipts.MODELS
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     db_path = str(tmp_path / "web.db")
@@ -97,7 +218,7 @@ def client(tmp_path, monkeypatch):
                 "vehicle_name": "Testowy",
                 "share_dir": str(tmp_path / "share")})
     app.testing = True
-    monkeypatch.setattr(receipts, "analyze", lambda path: dict(FLEET_PARSED))
+    monkeypatch.setattr(receipts, "analyze", lambda path, config: dict(FLEET_PARSED))
     return app.test_client()
 
 
@@ -144,7 +265,7 @@ def test_expense_links_attachment(client):
 
 
 def test_parse_endpoint_keeps_attachment_on_analyze_error(client, monkeypatch):
-    def boom(path):
+    def boom(path, config):
         raise receipts.ReceiptError("Model nie odpowiedział")
     monkeypatch.setattr(receipts, "analyze", boom)
     r = _parse_receipt(client)
