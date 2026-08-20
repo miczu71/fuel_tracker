@@ -294,12 +294,23 @@ window.FT = (function () {
         if (p.volume_l) V.value = p.volume_l;
         if (p.price_per_l) P.value = p.price_per_l;
         if (p.total_cost) T.value = p.total_cost;
-        if (p.station && !form.station.value) form.station.value = p.station;
+        // 0.16.0: stacja z paragonu nadpisuje pole zawsze (to akcja
+        // użytkownika — skan) — dawniej cichy prefill z ostatniej stacji
+        // wygrywał pierwszy i skan nigdy nie trafiał do pola.
+        if (p.station) {
+          form.station.value = p.station;
+          if (p.latitude != null) {
+            form.latitude.value = p.latitude;
+            form.longitude.value = p.longitude;
+          }
+        }
         if (p.currency && p.currency !== "PLN") {
           form.currency.value = p.currency;
           syncCurrency(false);
         }
-        scanStatus.textContent = "✓ Odczytano — sprawdź pola przed zapisem";
+        scanStatus.textContent = p.station
+          ? `✓ Odczytano — stacja z paragonu, sprawdź pola przed zapisem`
+          : "✓ Odczytano — sprawdź pola przed zapisem";
         if (p.non_fuel_total > 0) {
           receiptExtras = p;
           extrasBox.hidden = false;
@@ -345,9 +356,29 @@ window.FT = (function () {
         form.odometer.value = pre.odometer;
         document.getElementById("odo-hint").textContent = "(z encji odometru)";
       }
+      // 0.16.0: "station" to już tylko realne dopasowanie GPS (koniec
+      // cichego fallbacku na ostatnią stację, docs/PLAN-0.16.0-stations.md).
+      // Ostatnia stacja wraca osobno jako station_suggestion — podpowiedź
+      // do kliknięcia, nie automatyczny wpis.
       if (pre.station) form.station.value = pre.station;
       if (pre.price_per_l) P.value = pre.price_per_l;
       const gps = document.getElementById("gps-hint");
+      const renderSuggestion = () => {
+        if (form.station.value || !pre.station_suggestion) {
+          gps.textContent = "";
+          return;
+        }
+        gps.textContent = "";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "link-btn";
+        btn.textContent = `Ostatnio: ${pre.station_suggestion} — wstaw`;
+        btn.addEventListener("click", () => {
+          form.station.value = pre.station_suggestion;
+          gps.textContent = "";
+        });
+        gps.appendChild(btn);
+      };
       if (pre.latitude != null) {
         form.latitude.value = pre.latitude;
         form.longitude.value = pre.longitude;
@@ -364,11 +395,13 @@ window.FT = (function () {
               } else if (near.length) {
                 gps.textContent = `(w pobliżu: ${near.map((n) => n.name).slice(0, 3).join(", ")})`;
               } else {
-                gps.textContent = "";
+                renderSuggestion();
               }
             })
-            .catch(() => { gps.textContent = ""; });
+            .catch(() => { renderSuggestion(); });
         }
+      } else {
+        renderSuggestion();
       }
     }
 
@@ -1025,6 +1058,70 @@ window.FT = (function () {
         }),
       });
       rep.textContent = JSON.stringify(await r.json(), null, 2);
+    });
+
+    // ── Stacje: porządki - duplikaty/braki adresu, podgląd → zatwierdzenie
+    // (0.16.0, docs/PLAN-0.16.0-stations.md) — nic nie zmienia się bez
+    // jawnego zaznaczenia i kliknięcia "Zastosuj".
+    const stCheckBtn = document.getElementById("stations-cleanup-btn");
+    const stResult = document.getElementById("stations-cleanup-result");
+    const stDupBox = document.getElementById("stations-duplicates");
+    const stEnrBox = document.getElementById("stations-enrichments");
+    const stApplyBtn = document.getElementById("stations-cleanup-apply");
+    const stReport = document.getElementById("stations-cleanup-report");
+    let stPreview = null;
+
+    const renderStationsPreview = () => {
+      stDupBox.innerHTML = stPreview.duplicates.length
+        ? `<div class="card-title" style="font-size:14px">Duplikaty</div>` +
+          stPreview.duplicates.map((d, i) => `
+            <label class="check">
+              <input type="checkbox" data-dup="${i}">
+              Scal „${d.remove_name}" (${d.remove_visits} tank.) →
+              „${d.keep_name}" (${d.keep_visits} tank.) — ${d.distance_m} m
+            </label>`).join("")
+        : `<p class="muted">Brak wykrytych duplikatów.</p>`;
+      stEnrBox.innerHTML = stPreview.enrichments.length
+        ? `<div class="card-title" style="font-size:14px;margin-top:10px">
+            Braki marki/adresu</div>` +
+          stPreview.enrichments.map((e, i) => `
+            <label class="check">
+              <input type="checkbox" data-enr="${i}">
+              „${e.current_name}" → „${e.proposed_name}" (OSM, ${e.distance_m} m)
+            </label>`).join("")
+        : `<p class="muted">Brak braków do uzupełnienia.</p>`;
+      stApplyBtn.disabled =
+        !(stPreview.duplicates.length || stPreview.enrichments.length);
+      stResult.hidden = false;
+    };
+
+    stCheckBtn.addEventListener("click", async () => {
+      stCheckBtn.disabled = true;
+      stCheckBtn.textContent = "Sprawdzam…";
+      try {
+        stPreview = await getJSON("api/stations/cleanup/preview");
+        renderStationsPreview();
+      } finally {
+        stCheckBtn.disabled = false;
+        stCheckBtn.textContent = "Sprawdź stacje";
+      }
+    });
+
+    stApplyBtn.addEventListener("click", async () => {
+      const merges = [...stDupBox.querySelectorAll("[data-dup]:checked")]
+        .map((el) => stPreview.duplicates[Number(el.dataset.dup)])
+        .map((d) => ({ keep_id: d.keep_id, remove_id: d.remove_id }));
+      const enrichments = [...stEnrBox.querySelectorAll("[data-enr]:checked")]
+        .map((el) => stPreview.enrichments[Number(el.dataset.enr)]);
+      if (!merges.length && !enrichments.length) return;
+      stApplyBtn.disabled = true;
+      const r = await sendJSON("api/stations/cleanup/apply", "POST",
+        { merges, enrichments });
+      stReport.hidden = false;
+      stReport.textContent = JSON.stringify(r, null, 2);
+      stPreview = await getJSON("api/stations/cleanup/preview");
+      renderStationsPreview();
+      stApplyBtn.disabled = false;
     });
 
     // ── Kategorie wydatków: CRUD + grupa TCO (0.13.0) ──────────────────────

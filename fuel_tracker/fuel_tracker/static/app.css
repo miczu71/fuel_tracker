@@ -161,6 +161,11 @@ body {
 }
 
 .muted { color: var(--muted); font-size: 13px; }
+.link-btn {
+  background: none; border: none; padding: 0; margin: 0;
+  color: var(--series-1); font-size: 13px; text-decoration: underline;
+  cursor: pointer;
+}
 .error { color: var(--critical); margin-top: 10px; }
 .report {
   background: var(--page); border: 1px solid var(--grid);

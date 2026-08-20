@@ -36,9 +36,22 @@ pełnymi bakami, sensory MQTT discovery i mobilny web UI po polsku przez ingress
   tankowaniami do pełna (partiale wliczane do segmentu), średnia ogólna
   Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne
   (paliwo z karty / paliwo prywatne / wydatki jako osobne serie wykresu).
-- **Stacje po GPS** — przy otwarciu formularza add-on pobiera pozycję telefonu
-  (`location_entity`, aplikacja mobilna HA) i dopasowuje najbliższą zapisaną
-  stację (300 m); bez dopasowania podpowiada nazwę z OSM Overpass (500 m).
+- **Stacje po GPS i po adresie z paragonu (od 0.16.0)** — przy otwarciu
+  formularza add-on pobiera pozycję telefonu (`location_entity`, aplikacja
+  mobilna HA) i dopasowuje najbliższą zapisaną stację (300 m); bez
+  dopasowania podpowiada nazwę z OSM Overpass (500 m, teraz z adresem —
+  ulica + numer + miasto + marka, nie samo `tags.name`). Skan paragonu
+  (📷) wyciąga adres i numer stacji wprost z paragonu (odróżnia adres
+  stacji od siedziby spółki na paragonach ORLEN) i **geokoduje go przez
+  Nominatim** — stacja dostaje prawdziwe współrzędne zamiast pozycji
+  telefonu w chwili tankowania, a nazwa i pole „Stacja" wypełniają się
+  automatycznie ze skanu (koniec ręcznego poprawiania adresów). Ostatnio
+  użyta stacja to już tylko klikalna podpowiedź, nie cichy wpis do pola.
+  Numer stacji z paragonu (marka + numer) daje deterministyczne
+  dopasowanie niezależne od nazwy. W Ustawieniach → „Stacje": narzędzie
+  porządków z podglądem — wykrywa zdublowane stacje (te same współrzędne
+  pod dwiema nazwami) i braki marki/adresu, nic nie zmienia bez jawnego
+  zaznaczenia i „Zastosuj".
 - **Mapa tankowań** — podstrona z pinami stacji (Leaflet + kafelki OSM):
   rozmiar pinu = liczba wizyt, kolor odróżnia tankowania prywatne
   i zagraniczne, popup ze statystykami stacji.
@@ -296,7 +309,9 @@ wyłącznie w UI (karta Budżet) — nie ma odpowiednika w opcjach Supervisora.
 `GET /api/summary` · CRUD `/api/fillups` · `GET /api/prefill` ·
 `GET /api/rate` · CRUD `/api/expenses` · CRUD `/api/categories`
 (od 0.13.0 — dawniej tylko `GET|PUT`) ·
-`GET /api/stations` · `GET /api/stations/nearby` · `GET /api/map-data` ·
+`GET /api/stations` · `GET /api/stations/nearby` ·
+`GET /api/stations/cleanup/preview` · `POST /api/stations/cleanup/apply`
+(od 0.16.0) · `GET /api/map-data` ·
 `POST /api/receipts/parse` · `GET /api/attachments/<id>` ·
 `GET /api/statistics` (od 0.13.0 z blokiem `tco`) ·
 `GET /api/compare` (od 0.13.0) · `GET /api/report.csv` ·
@@ -323,6 +338,13 @@ od 0.11.0 też budżet i encje HA) ·
 > **Od 0.12.0:** eksport CSV jest pod `GET /api/export/log.csv` (poprzedni
 > route eksportu usunięty); endpoint `GET /api/verify` (jednorazowy raport
 > porównawczy z czasów migracji z Drivvo) został usunięty.
+>
+> **Od 0.16.0:** `GET /api/prefill` nie wpisuje już cicho ostatniej stacji
+> do pola `station` bez dopasowania GPS — zwraca `station_suggestion`
+> osobno (front pokazuje ją jako klikalną podpowiedź). `POST
+> /api/receipts/parse` dodatkowo zwraca `station_source`,
+> `station_brand/street/city/postcode/ref` i geokodowane
+> `latitude`/`longitude` stacji z adresu na paragonie.
 
 ## Plan rozwoju
 

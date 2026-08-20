@@ -116,6 +116,21 @@
 </div>
 
 <div class="card">
+  <div class="card-title">Stacje</div>
+  <p class="muted">Duplikaty (ta sama stacja pod dwiema nazwami) i braki
+  marki/adresu wykryte na podstawie zapisanych współrzędnych. Nic nie
+  zmienia się automatycznie — zaznacz pozycje i kliknij Zastosuj.</p>
+  <button type="button" class="btn" id="stations-cleanup-btn">Sprawdź stacje</button>
+  <div id="stations-cleanup-result" hidden>
+    <div id="stations-duplicates"></div>
+    <div id="stations-enrichments"></div>
+    <button type="button" class="btn primary" id="stations-cleanup-apply"
+      style="margin-top:10px" disabled>Zastosuj zaznaczone</button>
+  </div>
+  <pre class="report" id="stations-cleanup-report" hidden></pre>
+</div>
+
+<div class="card">
   <div class="card-title">Kategorie wydatków</div>
   <p class="muted">Ukryte kategorie nie pojawiają się w formularzu wydatku
   (historyczne wpisy zostają bez zmian). Grupa TCO decyduje, jak wydatek

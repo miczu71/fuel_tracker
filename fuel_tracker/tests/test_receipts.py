@@ -70,6 +70,51 @@ def test_normalize_tolerates_garbage():
     assert n["non_fuel_items"] == []  # pozycja bez opisu odpada
 
 
+# ── adres stacji z paragonu (0.16.0, docs/PLAN-0.16.0-stations.md) ─────────
+
+def test_normalize_composes_station_from_address():
+    """Prawdziwy kształt danych z receipt_orlen_fleet.jpg (Będzino, stacja
+    nr 4282) — nazwa musi wyjść z adresu, nie z gołego station_name."""
+    n = receipts.normalize({
+        "receipt_type": "fleet_card", "station_name": "ORLEN Będzino",
+        "station_brand": "Orlen", "station_street": "Będzino 87",
+        "station_city": "Będzino", "station_postcode": "76-037",
+        "station_ref": "4282",
+        "date": "2026-07-03", "time": "15:56", "odometer_km": 31462,
+        "fuel_name": "", "fuel_volume_l": 52.47, "fuel_price_per_l": 0,
+        "fuel_total": 357.85, "currency": "PLN", "non_fuel_items": [],
+    }, "PB95")
+    assert n["station"] == "Będzino 87, Będzino - Orlen"
+    assert n["station_brand"] == "Orlen"
+    assert n["station_street"] == "Będzino 87"
+    assert n["station_city"] == "Będzino"
+    assert n["station_postcode"] == "76-037"
+    assert n["station_ref"] == "4282"
+
+
+def test_normalize_falls_back_to_station_name_without_address():
+    n = receipts.normalize(dict(FLEET_PARSED), "PB95")
+    assert n["station"] == "Stacja Testowa"  # brak pól adresu — stary sposób
+    assert n["station_brand"] is None
+    assert n["station_street"] is None
+    assert n["station_ref"] is None
+
+
+def test_prompt_teaches_model_to_skip_company_headquarters():
+    # Regresja: model brał adres centrali w Płocku zamiast adresu stacji
+    # (wszystkie 4 skany Orlenu w bazie dały gołe "ORLEN Wrocław"/"ORLEN
+    # Będzino" — bez adresu, patrz plan, przyczyna nr 2).
+    assert "CENTRALA" in receipts.PROMPT
+    assert "STACJI" in receipts.PROMPT
+
+
+def test_structure_has_station_address_fields():
+    props = receipts.STRUCTURE["properties"]
+    for field in ("station_brand", "station_street", "station_city",
+                  "station_postcode", "station_ref"):
+        assert field in props
+
+
 def test_map_fuel():
     assert receipts._map_fuel("EFECTA 95") == "PB95"
     assert receipts._map_fuel("VERVA 98") == "PB98"
@@ -262,6 +307,25 @@ def test_expense_links_attachment(client):
     assert r.status_code == 201
     rows = client.get("/api/expenses").get_json()
     assert rows[0]["attachment_id"] == aid
+
+
+def test_parse_endpoint_resolves_station_from_receipt_address(client, monkeypatch):
+    """0.16.0: /api/receipts/parse geokoduje adres z paragonu i zwraca
+    stację z PRAWDZIWYMI współrzędnymi — nie z pozycji telefonu."""
+    parsed_with_address = dict(FLEET_PARSED, station_name="ORLEN Będzino",
+                               station_brand="Orlen", station_street="Będzino 87",
+                               station_city="Będzino", station_postcode="76-037",
+                               station_ref="4282")
+    monkeypatch.setattr(receipts, "analyze",
+                        lambda path, config: parsed_with_address)
+    monkeypatch.setattr(receipts.stations.geocode, "geocode_address",
+                        lambda *a, **kw: (54.2088119, 15.9835218))
+
+    body = _parse_receipt(client).get_json()["parsed"]
+    assert body["station"] == "Będzino 87, Będzino - Orlen"
+    assert body["station_source"] == "address"
+    assert body["latitude"] == 54.2088119
+    assert body["longitude"] == 15.9835218
 
 
 def test_parse_endpoint_keeps_attachment_on_analyze_error(client, monkeypatch):

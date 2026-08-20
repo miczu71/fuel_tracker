@@ -14,6 +14,12 @@ Dwa znane formaty ORLEN (próbki w tests/fixtures/):
 - paragon fiskalny: nazwa paliwa, litry × cena/L, sekcja VAT;
 - "DOWÓD WYDANIA - KARTA FLOTA ORLEN" (niefiskalny): Kwota, Ilość,
   Stan licznika (przebieg!), bez ceny/L i bez nazwy paliwa.
+
+Adres stacji (0.16.0, docs/PLAN-0.16.0-stations.md): oba formaty mają adres
+STACJI osobno od adresu centrali spółki (paragony ORLEN pokazują centralę
+w Płocku na górze — trzeba ją pominąć). station_brand/street/city/postcode/
+ref idą do stations.resolve_station() w web.py, żeby stacja powstała
+z realnym adresem zamiast pozycji telefonu.
 """
 from __future__ import annotations
 
@@ -24,7 +30,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import ha_client, vision
+from . import ha_client, stations, vision
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +54,23 @@ STRUCTURE = {
             "description": "fiscal | fleet_card | other",
         },
         "station_name": {"type": "string",
-                         "description": "Sieć + miasto, np. 'ORLEN Warszawa'"},
+                         "description": "Pełny nagłówek stacji z paragonu"},
+        "station_brand": {"type": "string",
+                          "description": "Sieć, np. 'Orlen', 'BP', 'Shell'. "
+                                         "'' gdy brak"},
+        "station_street": {"type": "string",
+                           "description": "Ulica z numerem stacji, np. "
+                                          "'Maślicka 218', 'Będzino 87'. "
+                                          "'' gdy brak"},
+        "station_city": {"type": "string",
+                         "description": "Miasto/miejscowość STACJI (nie "
+                                        "centrali spółki). '' gdy brak"},
+        "station_postcode": {"type": "string",
+                             "description": "Kod pocztowy stacji, np. "
+                                            "'76-037'. '' gdy brak"},
+        "station_ref": {"type": "string",
+                        "description": "Numer stacji z paragonu (np. 'nr "
+                                       "4282'), sam numer. '' gdy brak"},
         "date": {"type": "string", "description": "YYYY-MM-DD"},
         "time": {"type": "string", "description": "HH:MM, 24h"},
         "odometer_km": {"type": "integer",
@@ -88,7 +110,14 @@ odometer_km wypełnij TYLKO gdy paragon ma stan licznika/przebieg — inaczej 0.
 fuel_price_per_l = 0, gdy ceny za litr nie ma wprost na paragonie.
 Pozycje niepaliwowe (AdBlue, płyn do spryskiwaczy, olej, akcesoria,
 jedzenie) wypisz w non_fuel_items z kwotami brutto; nie wliczaj ich
-do fuel_total. Gdy paragon jest wyłącznie za paliwo, non_fuel_items = []."""
+do fuel_total. Gdy paragon jest wyłącznie za paliwo, non_fuel_items = [].
+
+Adres STACJI, nie siedziby spółki. Na paragonach ORLEN pierwszy adres
+(np. "09-411 PŁOCK, UL. CHEMIKÓW 7") to CENTRALA — pomiń go. Adres stacji
+stoi niżej, przy linii "STACJA PALIW NR <numer> W <MIASTO>", np.
+"BĘDZINO 87, 76-037 BĘDZINO". station_ref = numer z tej linii (sam numer,
+bez "nr"), "" gdy paragon go nie ma. station_street/city/postcode to adres
+STACJI wyciągnięty z tej samej linii, nie z nagłówka centrali."""
 
 
 class ReceiptError(Exception):
@@ -251,6 +280,15 @@ def normalize(parsed: dict, default_fuel_type: str = "PB95") -> dict:
             items.append({"description": desc, "total": cost})
     odo = parsed.get("odometer_km")
     fuel = _map_fuel(str(parsed.get("fuel_name") or ""))
+    station_brand = (parsed.get("station_brand") or "").strip() or None
+    station_street = (parsed.get("station_street") or "").strip() or None
+    station_city = (parsed.get("station_city") or "").strip() or None
+    station_postcode = (parsed.get("station_postcode") or "").strip() or None
+    station_ref = (parsed.get("station_ref") or "").strip() or None
+    # Nazwa z adresu (konwencja "{ulica} {nr}, {miasto} - {Marka}"), z odwrotem
+    # na station_name modelu, gdy paragon nie miał rozbitego adresu.
+    station = stations.compose_name(station_street, station_city, station_brand) \
+        or (parsed.get("station_name") or "").strip() or None
     return {
         "receipt_type": parsed.get("receipt_type") or "other",
         "date": dt,
@@ -259,7 +297,12 @@ def normalize(parsed: dict, default_fuel_type: str = "PB95") -> dict:
         "price_per_l": price,
         "total_cost": total,
         "fuel_type": fuel or default_fuel_type,
-        "station": (parsed.get("station_name") or "").strip() or None,
+        "station": station,
+        "station_brand": station_brand,
+        "station_street": station_street,
+        "station_city": station_city,
+        "station_postcode": station_postcode,
+        "station_ref": station_ref,
         "currency": ((parsed.get("currency") or "PLN").strip().upper()[:3]
                      or "PLN"),
         "non_fuel_items": items,

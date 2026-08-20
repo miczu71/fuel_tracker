@@ -191,6 +191,32 @@ def test_stations_nearby_requires_coords(client):
     assert client.get("/api/stations/nearby?lat=x&lon=y").status_code == 400
 
 
+def test_stations_cleanup_preview_and_apply_merge(client):
+    _add_fillup(client, station="Wrocław - Orlen",
+               latitude=50.0000, longitude=20.0000)
+    _add_fillup(client, station="Szybowcowa 27, Wrocław - Orlen",
+               date="2025-02-01T12:00", odometer=1500,
+               latitude=50.0000, longitude=20.0000)
+
+    preview = client.get("/api/stations/cleanup/preview").get_json()
+    assert len(preview["duplicates"]) == 1
+    d = preview["duplicates"][0]
+
+    result = client.post("/api/stations/cleanup/apply", json={
+        "merges": [{"keep_id": d["keep_id"], "remove_id": d["remove_id"]}],
+        "enrichments": [],
+    }).get_json()
+    assert result["merges"] == 1
+    assert result["errors"] == []
+
+    stations = client.get("/api/stations").get_json()
+    assert len(stations) == 1
+
+    # Nic nie zaznaczone → nic się nie zmienia (podgląd nie ma efektów ubocznych).
+    preview2 = client.get("/api/stations/cleanup/preview").get_json()
+    assert preview2["duplicates"] == []
+
+
 def test_prefill_matches_station_by_gps(tmp_path):
     db_path = str(tmp_path / "gps.db")
     c = dbm.get_conn(db_path)
@@ -216,6 +242,17 @@ def test_prefill_matches_station_by_gps(tmp_path):
     assert pre["station"] == "Stacja A"
     assert pre["station_matched"] is True
     assert pre["latitude"] == 50.0001
+
+
+def test_prefill_no_longer_falls_back_to_last_station(client):
+    """0.16.0: koniec cichego fallbacku na ostatnią stację (docs/PLAN-0.16.0-
+    stations.md, przyczyna nr 4) — bez GPS "station" zostaje puste, ostatnia
+    stacja wraca osobno jako station_suggestion (podpowiedź, nie wartość)."""
+    _add_fillup(client, station="Stacja Historyczna")
+    pre = client.get("/api/prefill").get_json()
+    assert pre["station"] is None
+    assert pre["station_matched"] is False
+    assert pre["station_suggestion"] == "Stacja Historyczna"
 
 
 def test_expense_edit(client):

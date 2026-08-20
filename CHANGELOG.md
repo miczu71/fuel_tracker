@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.16.0
+
+- **Fix: stacja z paragonu (📷) nigdy nie trafiała do formularza —
+  trzeba było ją poprawiać ręcznie po każdym tankowaniu w Orlenie.**
+  Diagnoza na żywych danych (`/api/backup/export.json` z produkcji):
+  siedem współdziałających przyczyn, opisanych w
+  `docs/PLAN-0.16.0-stations.md`. Główna: `GET /api/prefill` wpisywał
+  cicho ostatnio użytą stację do pola `station` PRZED skanem, a warunek
+  `!form.station.value` we froncie później blokował skan przed
+  nadpisaniem — nazwa z paragonu nigdy nie wygrywała.
+- **Adres stacji wyciągany wprost z paragonu.** Schemat vision
+  (`receipts.py`) dokłada `station_brand/street/city/postcode/ref`;
+  prompt uczy model odróżniać adres STACJI od siedziby spółki (paragony
+  ORLEN pokazują centralę w Płocku nad adresem stacji — trzeba ją
+  pomijać). Nazwa stacji budowana wg konwencji
+  „{ulica} {nr}, {miasto} - {Marka}" (`stations.compose_name()`).
+- **Nowy moduł `geocode.py`** — adres z paragonu geokodowany przez
+  Nominatim, z cache w bazie (tabela `geocode_cache`) i obowiązkowym
+  `User-Agent`. Stacja dostaje prawdziwe współrzędne stacji zamiast
+  pozycji telefonu w chwili tankowania (zaobserwowane na produkcji: do
+  3,7 km rozjazdu, bo telefon bywa już w drodze).
+- **`stations.resolve_station()`** — jedno miejsce decydujące, jaka
+  stacja odpowiada tankowaniu, priorytet: numer stacji z paragonu
+  (marka+ref, deterministyczne) → adres z paragonu (geokodowany) → GPS
+  telefonu → ostatnio użyta nazwa (TYLKO jako podpowiedź do kliknięcia,
+  nigdy jako ciche dopasowanie — usunięty silent fallback z `/api/prefill`).
+- **`GET /api/stations/nearby` i sugestie OSM budują nazwę z tagów
+  `addr:*` + `brand`, nie z gołego `tags.name`** (dla Orlenu w OSM
+  `name == "Orlen"` — bez tego wszystkie stacje sieci kolidowały pod
+  jedną nazwą).
+- **Narzędzie porządków** (Ustawienia → „Stacje", nowe endpointy `GET
+  /api/stations/cleanup/preview` / `POST /api/stations/cleanup/apply`) —
+  wykrywa zdublowane stacje (te same współrzędne pod dwiema nazwami,
+  np. ducha po ręcznej zmianie nazwy) i braki marki/adresu, z podglądem
+  przed zapisem; nic nie zmienia się bez jawnego zaznaczenia.
+- Migracja bazy v11: `stations.ref/street/city/postcode/source`,
+  unikalny indeks `(brand, ref)`, nowa tabela `geocode_cache`.
+  Współrzędne z pozycji telefonu (`source='gps_phone'`) nie mogą już
+  nadpisać współrzędnych z adresu/geokodowania.
+- Diagnoza (dane z produkcji), plan i pełna lista przyczyn w
+  `docs/PLAN-0.16.0-stations.md`.
+
 ## 0.15.0
 
 - **Fix: skaner paragonów padał z „błędem komunikacji z LLM Vision" bez

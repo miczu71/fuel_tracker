@@ -262,6 +262,30 @@ _MIGRATIONS = [
         WHERE name IN ('Rejestracja', 'Parking', 'Myjnia',
                        'Opłaty za przejazd', 'Mandaty');
     """,
+    # v11 — tożsamość i adres stacji z paragonu (0.16.0,
+    # docs/PLAN-0.16.0-stations.md). ref+brand pozwala dopasować stację
+    # deterministycznie (numer stacji z paragonu), zamiast tylko po nazwie
+    # (fillups.station zostaje TEXT — patrz plan, sekcja "Poza zakresem").
+    # source odróżnia współrzędne z geokodowania adresu ('nominatim'/'osm')
+    # od pozycji telefonu w chwili tankowania ('gps_phone') — te drugie NIE
+    # mogą już nadpisać tych pierwszych (stations.upsert_station). Migracja
+    # to wyłącznie schemat — geokodowanie samych 12 istniejących stacji robi
+    # narzędzie porządków (web.py: /api/stations/cleanup), nie migracja.
+    """
+    ALTER TABLE stations ADD COLUMN ref TEXT;
+    ALTER TABLE stations ADD COLUMN street TEXT;
+    ALTER TABLE stations ADD COLUMN city TEXT;
+    ALTER TABLE stations ADD COLUMN postcode TEXT;
+    ALTER TABLE stations ADD COLUMN source TEXT NOT NULL DEFAULT 'legacy';
+    CREATE UNIQUE INDEX idx_stations_ref ON stations(brand, ref)
+        WHERE ref IS NOT NULL;
+
+    CREATE TABLE geocode_cache (
+        query TEXT PRIMARY KEY,
+        latitude REAL, longitude REAL,
+        resolved_at TEXT DEFAULT (datetime('now'))
+    );
+    """,
 ]
 
 TCO_GROUPS = ("fluids", "service", "insurance", "fees", "other")
