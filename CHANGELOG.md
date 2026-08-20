@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.2
+
+- **Fix: Overpass odrzucał KAŻDE zapytanie (406 Not Acceptable) brakiem
+  `User-Agent`** — odkryte dopiero po wdrożeniu 0.16.1 na produkcji: nowy
+  jawny błąd (Krok 5) ujawnił coś, co wcześniej ciche `except: return []`
+  ukrywało od 0.16.0 jako "brak braków do uzupełnienia". Wzbogacanie
+  z OSM (i sugestie `/api/stations/nearby` w formularzu) w praktyce nigdy
+  nie działało. Dodany `User-Agent` (ten sam wzorzec co `geocode.py` dla
+  Nominatim) naprawia obie ścieżki.
+
 ## 0.16.1
 
 - **Fix bloker: 0.16.0 odtwarzało dokładnie ten błąd, który miało

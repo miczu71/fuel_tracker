@@ -17,7 +17,7 @@ import time
 
 import requests
 
-from . import geocode
+from . import __version__, geocode
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +27,11 @@ MATCH_RADIUS_M = 300
 OVERPASS_RADIUS_M = 500
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OVERPASS_TIMEOUT_S = 5
+# Bez User-Agent overpass-api.de odpowiada 406 na KAŻDE zapytanie (0.16.1:
+# odkryte dopiero po wdrożeniu Kroku 5 — dawniej _overpass_raw/overpass_lookup
+# łykały ten błąd jako pustą listę, więc funkcja wzbogacania nigdy nie
+# działała, tylko wyglądała jak "brak braków do uzupełnienia").
+USER_AGENT = f"fuel_tracker/{__version__} (Home Assistant add-on)"
 # Źródła współrzędnych, od najbardziej do najmniej wiarygodnego. Tylko
 # źródła geokodowane (patrz _GEOCODED_SOURCES) mogą NADPISAĆ już zapisane
 # współrzędne — pozycja telefonu (gps_phone) tylko UZUPEŁNIA puste pole,
@@ -383,6 +388,7 @@ def _overpass_raw(lat: float, lon: float,
         f"nwr[amenity=fuel](around:{radius_m},{lat},{lon});out center;"
     )
     resp = requests.post(OVERPASS_URL, data={"data": query},
+                         headers={"User-Agent": USER_AGENT},
                          timeout=OVERPASS_TIMEOUT_S + 2)
     resp.raise_for_status()
     elements = resp.json().get("elements", [])
