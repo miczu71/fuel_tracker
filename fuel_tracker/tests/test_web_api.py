@@ -217,6 +217,68 @@ def test_stations_cleanup_preview_and_apply_merge(client):
     assert preview2["duplicates"] == []
 
 
+def test_stations_cleanup_enrich_is_separate_endpoint(client, monkeypatch):
+    """0.16.1 (Krok 5): braki marki/adresu (Overpass, wolne/zawodne) to
+    ODDZIELNY endpoint od preview (czysty SQLite) — dawniej jedno żądanie
+    robiło jedno blokujące zapytanie Overpass NA STACJĘ, więc duplikaty
+    (tanie) ginęły razem z timeoutem sieciowym."""
+    from fuel_tracker import stations as stn_mod
+    _add_fillup(client, station="Wrocław - Orlen",
+               latitude=50.0000, longitude=20.0000)  # brak brand/street
+    preview = client.get("/api/stations/cleanup/preview").get_json()
+    assert "enrichments" not in preview  # przeniesione do /enrich
+    assert "duplicates" in preview
+
+    monkeypatch.setattr(stn_mod, "_overpass_raw", lambda lat, lon, radius_m=None: [
+        {"name": "Orlen", "brand": "Orlen", "street": "Szybowcowa 27",
+         "city": "Wrocław", "postcode": "54-104", "latitude": 50.0000,
+         "longitude": 20.0000, "distance_m": 5},
+    ])
+    enrich = client.get("/api/stations/cleanup/enrich").get_json()
+    assert len(enrich["proposals"]) == 1
+    assert enrich["proposals"][0]["proposed_name"] == \
+        "Szybowcowa 27, Wrocław - Orlen"
+    assert enrich["remaining"] == 0
+    assert enrich["errors"] == []
+
+
+def test_receipt_scan_does_not_write_station_but_save_uses_geocoded_coords(
+        client, monkeypatch):
+    """Regresja bloku korupcji danych 0.16.0→0.16.1 end-to-end: skan sam nic
+    nie zapisuje do `stations` (Krok 1b); dopiero zapis tankowania tworzy
+    stację, i to z geokodowanymi współrzędnymi z paragonu — NIE z pozycji
+    telefonu (source='gps_phone' byłby dowodem regresji, patrz Krok 1a)."""
+    import io
+    from fuel_tracker import receipts, stations as stn_mod
+
+    parsed = dict(
+        receipt_type="fleet_card", station_name="ORLEN Będzino",
+        station_brand="Orlen", station_street="Będzino 87",
+        station_city="Będzino", station_postcode="76-037", station_ref="4282",
+        date="2026-01-15", time="12:34", odometer_km=12345,
+        fuel_name="", fuel_volume_l=45.5, fuel_price_per_l=0,
+        fuel_total=300.30, currency="PLN", non_fuel_items=[])
+    monkeypatch.setattr(receipts, "analyze", lambda path, config: parsed)
+    monkeypatch.setattr(stn_mod.geocode, "geocode_address",
+                        lambda *a, **kw: (54.2088119, 15.9835218))
+
+    r = client.post("/api/receipts/parse", data={
+        "file": (io.BytesIO(b"fake-jpeg"), "receipt.jpg")},
+        content_type="multipart/form-data")
+    body = r.get_json()
+    aid = body["attachment_id"]
+    assert client.get("/api/stations").get_json() == []  # skan nie zapisuje
+
+    fid = _add_fillup(client, station=body["parsed"]["station"],
+                      latitude=51.1000, longitude=17.0000,  # pozycja telefonu
+                      attachment_id=aid).get_json()["id"]
+    assert fid
+    stations = client.get("/api/stations").get_json()
+    assert len(stations) == 1
+    assert stations[0]["latitude"] == 54.2088119  # z adresu, nie z telefonu
+    assert stations[0]["source"] == "nominatim"
+
+
 def test_prefill_matches_station_by_gps(tmp_path):
     db_path = str(tmp_path / "gps.db")
     c = dbm.get_conn(db_path)

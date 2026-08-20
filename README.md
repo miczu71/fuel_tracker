@@ -36,22 +36,25 @@ pełnymi bakami, sensory MQTT discovery i mobilny web UI po polsku przez ingress
   tankowaniami do pełna (partiale wliczane do segmentu), średnia ogólna
   Σlitrów/Σkm (nie średnia średnich), koszt/km, serie miesięczne
   (paliwo z karty / paliwo prywatne / wydatki jako osobne serie wykresu).
-- **Stacje po GPS i po adresie z paragonu (od 0.16.0)** — przy otwarciu
-  formularza add-on pobiera pozycję telefonu (`location_entity`, aplikacja
-  mobilna HA) i dopasowuje najbliższą zapisaną stację (300 m); bez
-  dopasowania podpowiada nazwę z OSM Overpass (500 m, teraz z adresem —
-  ulica + numer + miasto + marka, nie samo `tags.name`). Skan paragonu
-  (📷) wyciąga adres i numer stacji wprost z paragonu (odróżnia adres
-  stacji od siedziby spółki na paragonach ORLEN) i **geokoduje go przez
-  Nominatim** — stacja dostaje prawdziwe współrzędne zamiast pozycji
-  telefonu w chwili tankowania, a nazwa i pole „Stacja" wypełniają się
-  automatycznie ze skanu (koniec ręcznego poprawiania adresów). Ostatnio
-  użyta stacja to już tylko klikalna podpowiedź, nie cichy wpis do pola.
-  Numer stacji z paragonu (marka + numer) daje deterministyczne
-  dopasowanie niezależne od nazwy. W Ustawieniach → „Stacje": narzędzie
-  porządków z podglądem — wykrywa zdublowane stacje (te same współrzędne
-  pod dwiema nazwami) i braki marki/adresu, nic nie zmienia bez jawnego
-  zaznaczenia i „Zastosuj".
+- **Stacje po GPS i po adresie z paragonu (od 0.16.0, poprawione 0.16.1)**
+  — przy otwarciu formularza add-on pobiera pozycję telefonu
+  (`location_entity`, aplikacja mobilna HA) i dopasowuje najbliższą
+  zapisaną stację (300 m); bez dopasowania podpowiada — klikalnie, nigdy
+  automatycznie — nazwę z OSM Overpass (500 m, z adresem: ulica + numer +
+  miasto + marka, nie samo `tags.name`). Skan paragonu (📷) wyciąga adres
+  i numer stacji wprost z paragonu (odróżnia adres stacji od siedziby
+  spółki na paragonach ORLEN) i **geokoduje go przez Nominatim** — sama
+  analiza nic nie zapisuje, dopiero zapis tankowania tworzy stację z
+  prawdziwymi współrzędnymi zamiast pozycji telefonu w chwili tankowania.
+  Pozycja telefonu przy zapisie tylko UZUPEŁNIA brakujące współrzędne,
+  nigdy nie nadpisuje już ustalonego adresu. Ostatnio użyta stacja to
+  tylko klikalna podpowiedź, nie cichy wpis do pola. Numer stacji z
+  paragonu (marka + numer) daje deterministyczne dopasowanie niezależne
+  od nazwy. W Ustawieniach → „Stacje": narzędzie porządków z podglądem —
+  wykrywa zdublowane stacje (klastrami, nie parami) i braki marki/adresu
+  (osobne, limitowane żądanie do OSM), scalanie przenosi dane i lepsze
+  współrzędne usuwanej stacji zamiast je kasować; nic nie zmienia się bez
+  jawnego zaznaczenia i „Zastosuj".
 - **Mapa tankowań** — podstrona z pinami stacji (Leaflet + kafelki OSM):
   rozmiar pinu = liczba wizyt, kolor odróżnia tankowania prywatne
   i zagraniczne, popup ze statystykami stacji.

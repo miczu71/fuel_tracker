@@ -11,6 +11,15 @@ window.FT = (function () {
         minimumFractionDigits: digits, maximumFractionDigits: digits,
       });
 
+  // 0.16.1: nazwy stacji wstawiane do innerHTML muszą być escapowane —
+  // proposed_name w karcie porządków pochodzi teraz z tagów OSM (baza
+  // edytowalna przez kogokolwiek), nie tylko z tego, co user sam wpisał.
+  const ESC_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;",
+                    '"': "&quot;", "'": "&#39;" };
+  const esc = (s) =>
+    s === null || s === undefined ? "" :
+      String(s).replace(/[&<>"']/g, (c) => ESC_MAP[c]);
+
   async function getJSON(url) {
     const r = await fetch(url);
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
@@ -294,15 +303,17 @@ window.FT = (function () {
         if (p.volume_l) V.value = p.volume_l;
         if (p.price_per_l) P.value = p.price_per_l;
         if (p.total_cost) T.value = p.total_cost;
-        // 0.16.0: stacja z paragonu nadpisuje pole zawsze (to akcja
-        // użytkownika — skan) — dawniej cichy prefill z ostatniej stacji
-        // wygrywał pierwszy i skan nigdy nie trafiał do pola.
-        if (p.station) {
+        // 0.16.0: stacja z paragonu nadpisuje pole (to akcja użytkownika —
+        // skan) — dawniej cichy prefill z ostatniej stacji wygrywał pierwszy
+        // i skan nigdy nie trafiał do pola. 0.16.1 (Krok 6): w trybie edycji
+        // TYLKO gdy pole jest puste — inaczej skan podpięty do już
+        // zapisanego wpisu cicho nadpisywał jego prawdziwą stację.
+        // form.latitude/longitude NIE są już tu ruszane — to pozycja
+        // telefonu w chwili zapisu; adres z paragonu trafia do bazy
+        // serwerowo przy zapisie (web.py: _remember_station czyta
+        // parsed_json po attachment_id), patrz docs/PLAN-0.16.1-fixes.md.
+        if (p.station && (!editId || !form.station.value)) {
           form.station.value = p.station;
-          if (p.latitude != null) {
-            form.latitude.value = p.latitude;
-            form.longitude.value = p.longitude;
-          }
         }
         if (p.currency && p.currency !== "PLN") {
           form.currency.value = p.currency;
@@ -363,18 +374,21 @@ window.FT = (function () {
       if (pre.station) form.station.value = pre.station;
       if (pre.price_per_l) P.value = pre.price_per_l;
       const gps = document.getElementById("gps-hint");
-      const renderSuggestion = () => {
-        if (form.station.value || !pre.station_suggestion) {
-          gps.textContent = "";
-          return;
-        }
+      // (0.16.1, Krok 6): jedna funkcja — klikalna podpowiedź, NIGDY sama
+      // nie wpisuje się do pola. Dawniej sugestia OSM ("z pobliżu")
+      // wpisywała się automatycznie; to był drugi cichy fallback,
+      // odblokowany dopiero usunięciem pierwszego (ostatnia stacja) —
+      // deklarowana zasada "nic nie wchodzi do pola samo" była łamana
+      // nadal, tylko inną drogą.
+      const renderSuggestion = (label, value) => {
         gps.textContent = "";
+        if (form.station.value || !value) return;
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "link-btn";
-        btn.textContent = `Ostatnio: ${pre.station_suggestion} — wstaw`;
+        btn.textContent = `${label}: ${value} — wstaw`;
         btn.addEventListener("click", () => {
-          form.station.value = pre.station_suggestion;
+          form.station.value = value;
           gps.textContent = "";
         });
         gps.appendChild(btn);
@@ -390,18 +404,17 @@ window.FT = (function () {
           getJSON(`api/stations/nearby?lat=${pre.latitude}&lon=${pre.longitude}`)
             .then((near) => {
               if (near.length && !form.station.value) {
-                form.station.value = near[0].name;
-                gps.textContent = `(z OSM, ${near[0].distance_m} m)`;
+                renderSuggestion(`Z OSM (${near[0].distance_m} m)`, near[0].name);
               } else if (near.length) {
                 gps.textContent = `(w pobliżu: ${near.map((n) => n.name).slice(0, 3).join(", ")})`;
               } else {
-                renderSuggestion();
+                renderSuggestion("Ostatnio", pre.station_suggestion);
               }
             })
-            .catch(() => { renderSuggestion(); });
+            .catch(() => { renderSuggestion("Ostatnio", pre.station_suggestion); });
         }
       } else {
-        renderSuggestion();
+        renderSuggestion("Ostatnio", pre.station_suggestion);
       }
     }
 
@@ -748,7 +761,7 @@ window.FT = (function () {
 
     document.querySelector("#stations-table tbody").innerHTML =
       s.stations.map((x) => `
-        <tr><td>${x.station}</td><td class="num">${x.visits}</td>
+        <tr><td>${esc(x.station)}</td><td class="num">${x.visits}</td>
         <td class="num">${fmt(x.volume_l, 1)}</td>
         <td class="num">${fmt(x.total_cost, 0)}</td>
         <td class="num">${x.avg_price != null ? fmt(x.avg_price) : "–"}</td></tr>`).join("");
@@ -1061,15 +1074,23 @@ window.FT = (function () {
     });
 
     // ── Stacje: porządki - duplikaty/braki adresu, podgląd → zatwierdzenie
-    // (0.16.0, docs/PLAN-0.16.0-stations.md) — nic nie zmienia się bez
-    // jawnego zaznaczenia i kliknięcia "Zastosuj".
+    // (0.16.0, docs/PLAN-0.16.0-stations.md; podzielone 0.16.1, Krok 5,
+    // docs/PLAN-0.16.1-fixes.md) — nic nie zmienia się bez jawnego
+    // zaznaczenia i kliknięcia "Zastosuj". Duplikaty (czysty SQLite) i braki
+    // marki/adresu (Overpass, limitowane+throttlowane po stronie serwera)
+    // to dwa osobne żądania — duplikaty renderują się od razu, zamiast być
+    // zakładnikiem wolnego/zawodnego sieciowego przemiału OSM w tym samym
+    // żądaniu (dawniej do ~84 s na 12 stacjach, ginęło razem z timeoutem
+    // ingressu).
     const stCheckBtn = document.getElementById("stations-cleanup-btn");
+    const stError = document.getElementById("stations-cleanup-error");
     const stResult = document.getElementById("stations-cleanup-result");
     const stDupBox = document.getElementById("stations-duplicates");
     const stEnrBox = document.getElementById("stations-enrichments");
     const stApplyBtn = document.getElementById("stations-cleanup-apply");
     const stReport = document.getElementById("stations-cleanup-report");
-    let stPreview = null;
+    let stPreview = { duplicates: [], enrichments: [] };
+    let stEnrichMeta = { remaining: 0, errors: [] };
 
     const renderStationsPreview = () => {
       stDupBox.innerHTML = stPreview.duplicates.length
@@ -1077,51 +1098,93 @@ window.FT = (function () {
           stPreview.duplicates.map((d, i) => `
             <label class="check">
               <input type="checkbox" data-dup="${i}">
-              Scal „${d.remove_name}" (${d.remove_visits} tank.) →
-              „${d.keep_name}" (${d.keep_visits} tank.) — ${d.distance_m} m
+              Scal „${esc(d.remove_name)}" (${d.remove_visits} tank.) →
+              „${esc(d.keep_name)}" (${d.keep_visits} tank.) — ${d.distance_m} m
             </label>`).join("")
         : `<p class="muted">Brak wykrytych duplikatów.</p>`;
-      stEnrBox.innerHTML = stPreview.enrichments.length
+      const enrHint = stEnrichMeta.remaining > 0
+        ? ` (zostało ${stEnrichMeta.remaining} do sprawdzenia — ` +
+          `kliknij „Sprawdź stacje" ponownie)`
+        : "";
+      const enrErr = stEnrichMeta.errors.length
+        ? `<p class="error">${esc(stEnrichMeta.errors.join("; "))}</p>` : "";
+      stEnrBox.innerHTML = enrErr + (stPreview.enrichments.length
         ? `<div class="card-title" style="font-size:14px;margin-top:10px">
-            Braki marki/adresu</div>` +
+            Braki marki/adresu${enrHint}</div>` +
           stPreview.enrichments.map((e, i) => `
             <label class="check">
               <input type="checkbox" data-enr="${i}">
-              „${e.current_name}" → „${e.proposed_name}" (OSM, ${e.distance_m} m)
+              „${esc(e.current_name)}" → „${esc(e.proposed_name)}" (OSM, ${e.distance_m} m)
             </label>`).join("")
-        : `<p class="muted">Brak braków do uzupełnienia.</p>`;
+        : stEnrichMeta.errors.length
+          ? ""
+          : `<p class="muted">Brak braków do uzupełnienia${enrHint}.</p>`);
       stApplyBtn.disabled =
         !(stPreview.duplicates.length || stPreview.enrichments.length);
       stResult.hidden = false;
+    };
+
+    const loadStationsPreview = async () => {
+      stError.hidden = true;
+      const dup = await getJSON("api/stations/cleanup/preview");
+      stPreview = { duplicates: dup.duplicates, enrichments: [] };
+      stEnrichMeta = { remaining: 0, errors: [] };
+      renderStationsPreview();  // duplikaty widoczne od razu
+      stCheckBtn.textContent = "Sprawdzam braki adresu (OSM)…";
+      const enr = await getJSON("api/stations/cleanup/enrich");
+      stPreview.enrichments = enr.proposals;
+      stEnrichMeta = { remaining: enr.remaining, errors: enr.errors };
+      renderStationsPreview();
     };
 
     stCheckBtn.addEventListener("click", async () => {
       stCheckBtn.disabled = true;
       stCheckBtn.textContent = "Sprawdzam…";
       try {
-        stPreview = await getJSON("api/stations/cleanup/preview");
-        renderStationsPreview();
+        await loadStationsPreview();
+      } catch (ex) {
+        stError.textContent = "Błąd: " + ex.message;
+        stError.hidden = false;
       } finally {
         stCheckBtn.disabled = false;
         stCheckBtn.textContent = "Sprawdź stacje";
       }
     });
 
+    // Zaznaczone checkboxy w danym boksie → odpowiadające im pozycje z
+    // podglądu (0.16.1: jedna funkcja zamiast dwóch identycznych zbieraczy).
+    const picked = (box, attr, items) =>
+      [...box.querySelectorAll(`[data-${attr}]:checked`)]
+        .map((el) => items[Number(el.dataset[attr])]);
+
     stApplyBtn.addEventListener("click", async () => {
-      const merges = [...stDupBox.querySelectorAll("[data-dup]:checked")]
-        .map((el) => stPreview.duplicates[Number(el.dataset.dup)])
+      const merges = picked(stDupBox, "dup", stPreview.duplicates)
         .map((d) => ({ keep_id: d.keep_id, remove_id: d.remove_id }));
-      const enrichments = [...stEnrBox.querySelectorAll("[data-enr]:checked")]
-        .map((el) => stPreview.enrichments[Number(el.dataset.enr)]);
+      const enrichments = picked(stEnrBox, "enr", stPreview.enrichments);
       if (!merges.length && !enrichments.length) return;
       stApplyBtn.disabled = true;
-      const r = await sendJSON("api/stations/cleanup/apply", "POST",
-        { merges, enrichments });
-      stReport.hidden = false;
-      stReport.textContent = JSON.stringify(r, null, 2);
-      stPreview = await getJSON("api/stations/cleanup/preview");
-      renderStationsPreview();
-      stApplyBtn.disabled = false;
+      stApplyBtn.textContent = "Zapisuję…";
+      try {
+        const r = await sendJSON("api/stations/cleanup/apply", "POST",
+          { merges, enrichments });
+        stReport.hidden = false;
+        stReport.textContent = JSON.stringify(r, null, 2);
+        // Tylko duplikaty (szybkie) — lista wzbogaceń czyszczona lokalnie
+        // z zastosowanych pozycji zamiast powtarzać cały przemiał Overpass.
+        const dup = await getJSON("api/stations/cleanup/preview");
+        stPreview.duplicates = dup.duplicates;
+        const appliedIds = new Set(enrichments.map((e) => e.station_id));
+        stPreview.enrichments =
+          stPreview.enrichments.filter((e) => !appliedIds.has(e.station_id));
+        renderStationsPreview();
+      } catch (ex) {
+        stError.textContent = "Błąd zapisu: " + ex.message;
+        stError.hidden = false;
+      } finally {
+        stApplyBtn.disabled =
+          !(stPreview.duplicates.length || stPreview.enrichments.length);
+        stApplyBtn.textContent = "Zastosuj zaznaczone";
+      }
     });
 
     // ── Kategorie wydatków: CRUD + grupa TCO (0.13.0) ──────────────────────

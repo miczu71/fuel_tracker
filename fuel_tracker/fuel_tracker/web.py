@@ -467,16 +467,35 @@ def create_app(db_path: str, config: dict,
                     f"({nxt['odometer']} km)")
         return None
 
-    def _remember_station(f: dict) -> None:
-        # source='gps_phone': pozycja telefonu w chwili zapisu formularza —
-        # NIE nadpisuje współrzędnych stacji ustalonych z adresu na paragonie
-        # (source 'receipt'/'nominatim'/'osm', priorytet wyższy — patrz
-        # stations._COORD_PRIORITY i docs/PLAN-0.16.0-stations.md). Tylko
-        # nowa stacja bez adresu dostaje pozycję telefonu jako start.
-        if f["station"]:
-            stn.upsert_station(conn(), f["station"],
-                               f["latitude"], f["longitude"],
-                               source="gps_phone")
+    def _remember_station(f: dict, data: dict) -> None:
+        """Jedyny pisarz do `stations` (0.16.1, Krok 1b — skan paragonu,
+        /api/receipts/parse, sam nic nie zapisuje, patrz resolve_station
+        persist=False tam). Domyślnie source='gps_phone': pozycja telefonu
+        w chwili zapisu formularza — NIE nadpisuje współrzędnych stacji
+        ustalonych z adresu (patrz stations._COORD_PRIORITY/
+        _GEOCODED_SOURCES). Gdy zapisywany wpis ma podpięty załącznik ze
+        skanu, którego resolve_station rozpoznało TĘ SAMĄ nazwę stacji, użyj
+        geokodowanych współrzędnych z tego skanu zamiast pozycji telefonu —
+        to jedyny moment, w którym adres z paragonu faktycznie trafia
+        do bazy."""
+        if not f["station"]:
+            return
+        lat, lon, source = f["latitude"], f["longitude"], "gps_phone"
+        aid = data.get("attachment_id")
+        if aid:
+            row = conn().execute(
+                "SELECT parsed_json FROM attachments WHERE id = ?",
+                (int(aid),)).fetchone()
+            try:
+                parsed = (json.loads(row["parsed_json"])
+                         if row and row["parsed_json"] else {})
+            except (TypeError, ValueError):
+                parsed = {}
+            if (parsed.get("station") == f["station"]
+                    and parsed.get("latitude") is not None):
+                lat, lon = parsed["latitude"], parsed["longitude"]
+                source = parsed.get("coord_source") or "legacy"
+        stn.upsert_station(conn(), f["station"], lat, lon, source=source)
 
     def _currency_error(f: dict) -> str | None:
         if f["currency"] != "PLN" and not f["exchange_rate"]:
@@ -532,7 +551,7 @@ def create_app(db_path: str, config: dict,
         except sqlite3.IntegrityError:
             return jsonify({"error": "Wpis o tej dacie i przebiegu już istnieje"}), 409
         _link_attachment(data, "fillup_id", cur.lastrowid)
-        _remember_station(f)
+        _remember_station(f, data)
         changed()
         return jsonify({"id": cur.lastrowid}), 201
 
@@ -563,7 +582,7 @@ def create_app(db_path: str, config: dict,
         if not cur.rowcount:
             return jsonify({"error": "not found"}), 404
         _link_attachment(data, "fillup_id", fid)
-        _remember_station(f)
+        _remember_station(f, data)
         changed()
         return jsonify({"ok": True})
 
@@ -610,7 +629,8 @@ def create_app(db_path: str, config: dict,
             "date": datetime.now().strftime("%Y-%m-%dT%H:%M"),
             "odometer": odometer,
             "station": matched["name"] if matched else None,
-            "station_source": "gps" if matched else None,
+            # station_source usunięty 0.16.1 (Krok 7): dublował
+            # station_matched — nikt go nie czytał (grep static/app.js).
             "station_matched": bool(matched),
             "station_suggestion": last["station"] if last else None,
             "latitude": lat, "longitude": lon,
@@ -650,18 +670,27 @@ def create_app(db_path: str, config: dict,
 
     @app.get("/api/stations/cleanup/preview")
     def api_stations_cleanup_preview():
-        """Porządki (0.16.0): NIC nie zapisuje — tylko propozycje do
-        zatwierdzenia w Ustawieniach (duplikaty do scalenia, braki marki/
-        adresu do uzupełnienia z OSM)."""
-        return jsonify({
-            "duplicates": stn.find_duplicate_stations(conn()),
-            "enrichments": stn.find_enrichable_stations(conn()),
-        })
+        """Porządki (0.16.0): NIC nie zapisuje — tylko duplikaty do scalenia.
+        0.16.1 (Krok 5, docs/PLAN-0.16.1-fixes.md): braki marki/adresu
+        przeniesione do osobnego /api/stations/cleanup/enrich — to czysty
+        SQLite (milisekundy), dawniej zakładnik sieciowego przemiału Overpass
+        w TYM SAME żądaniu (do ~84 s na 12 stacjach), więc ginął razem z nim
+        przy timeoucie ingressu."""
+        return jsonify({"duplicates": stn.find_duplicate_stations(conn())})
+
+    @app.get("/api/stations/cleanup/enrich")
+    def api_stations_cleanup_enrich():
+        """Porządki (0.16.1, Krok 5): propozycje uzupełnienia marki/adresu
+        z Overpass — limitowane (stn.ENRICH_MAX_STATIONS na przebieg) +
+        throttlowane, NIC nie zapisuje. "remaining" > 0 → kliknij ponownie,
+        sprawdzi kolejną paczkę. "errors" niepuste ≠ "wszystko uzupełnione" —
+        odróżnia awarię Overpassu od braku braków."""
+        return jsonify(stn.find_enrichable_stations(conn()))
 
     @app.post("/api/stations/cleanup/apply")
     def api_stations_cleanup_apply():
         """Stosuje TYLKO zaznaczone pozycje z podglądu (body: merges[],
-        enrichments[] — kształt jak wpisy zwrócone przez preview)."""
+        enrichments[] — kształt jak wpisy zwrócone przez preview/enrich)."""
         data = request.get_json(force=True)
         result = {"merges": 0, "enrichments": 0, "errors": []}
         for m in data.get("merges") or []:
@@ -675,7 +704,8 @@ def create_app(db_path: str, config: dict,
                 stn.apply_enrichment(
                     conn(), int(e["station_id"]), name=e["proposed_name"],
                     brand=e.get("brand"), street=e.get("street"),
-                    city=e.get("city"), postcode=e.get("postcode"))
+                    city=e.get("city"), postcode=e.get("postcode"),
+                    latitude=e.get("latitude"), longitude=e.get("longitude"))
                 result["enrichments"] += 1
             except (ValueError, KeyError, sqlite3.IntegrityError) as exc:
                 result["errors"].append(str(exc))
@@ -842,15 +872,20 @@ def create_app(db_path: str, config: dict,
                                      "sprawdź logi add-onu",
                             "attachment_id": aid}), 502
         # 0.16.0: stacja z adresu na paragonie (docs/PLAN-0.16.0-stations.md)
-        # — geokoduje i tworzy/dopasowuje stację TERAZ, żeby zapisane
-        # współrzędne pochodziły z adresu, nie z pozycji telefonu.
+        # — geokoduje adres TERAZ, żeby prefill pokazał PRAWDZIWĄ pozycję
+        # zamiast pozycji telefonu. 0.16.1 (Krok 1b, docs/PLAN-0.16.1-fixes.md):
+        # persist=False — to jest tylko PODGLĄD skanu, skan może zostać
+        # porzucony bez zapisania tankowania; jedynym pisarzem do `stations`
+        # jest _remember_station() przy faktycznym zapisie, które czyta
+        # coord_source zapisany tu w parsed_json.
         resolved = stn.resolve_station(
             conn(), ref=norm.get("station_ref"), brand=norm.get("station_brand"),
             street=norm.get("station_street"), city=norm.get("station_city"),
-            postcode=norm.get("station_postcode"))
+            postcode=norm.get("station_postcode"), persist=False)
         if resolved["matched"]:
             norm["station"] = resolved["name"]
             norm["station_source"] = resolved["source"]
+            norm["coord_source"] = resolved["coord_source"]
             norm["latitude"] = resolved["latitude"]
             norm["longitude"] = resolved["longitude"]
         conn().execute(

@@ -84,3 +84,48 @@ def test_geocode_address_empty_input_returns_none_without_request(conn, monkeypa
         geocode.requests, "get",
         lambda *a, **kw: pytest.fail("puste dane nie powinny odpytywać sieci"))
     assert geocode.geocode_address(conn, "", "") is None
+
+
+# ── 0.16.1: TTL pudeł + kontrola miasta (docs/PLAN-0.16.1-fixes.md, Krok 2) ─
+
+def test_geocode_address_stale_miss_requeries_after_ttl(conn, monkeypatch):
+    """Regresja: pudło (brak trafienia) blokowało adres bezterminowo —
+    resolved_at zapisywane, ale nigdy nie czytane. Świeże pudło (< TTL) NIE
+    odpytuje sieci drugi raz; pudło starsze niż _MISS_TTL_DAYS odpytuje."""
+    monkeypatch.setattr(geocode.requests, "get",
+                        lambda *a, **kw: _FakeResp([]))
+    assert geocode.geocode_address(conn, "Nigdzie 1", "Nikąd") is None
+
+    key = geocode._cache_key("Nigdzie 1", "Nikąd", None, "Polska")
+    conn.execute(
+        "UPDATE geocode_cache SET resolved_at = "
+        "datetime('now', ?) WHERE query = ?",
+        (f"-{geocode._MISS_TTL_DAYS + 1} days", key))
+    conn.commit()
+
+    calls = []
+    monkeypatch.setattr(geocode.requests, "get", lambda *a, **kw: (
+        calls.append(1),
+        _FakeResp([{"lat": "1.0", "lon": "2.0"}]))[1])
+    assert geocode.geocode_address(conn, "Nigdzie 1", "Nikąd") == (1.0, 2.0)
+    assert len(calls) == 1  # pudło było przeterminowane — odpytało ponownie
+
+
+def test_geocode_address_rejects_hit_from_wrong_city(conn, monkeypatch):
+    """Regresja: paragony ORLEN drukują adres centrali w Płocku nad adresem
+    stacji — bez kontroli miasta trafienie w centralę ląduje jako źródło
+    'nominatim' (najwyższy priorytet), nieodwracalne przez GPS telefonu."""
+    monkeypatch.setattr(geocode.requests, "get", lambda *a, **kw: _FakeResp([{
+        "lat": "52.5", "lon": "19.7",
+        "address": {"city": "Płock"},
+    }]))
+    assert geocode.geocode_address(conn, "Chemików 7", "Będzino") is None
+
+
+def test_geocode_address_accepts_matching_city_with_diacritics(conn, monkeypatch):
+    monkeypatch.setattr(geocode.requests, "get", lambda *a, **kw: _FakeResp([{
+        "lat": "54.2088119", "lon": "15.9835218",
+        "address": {"town": "BĘDZINO"},
+    }]))
+    assert geocode.geocode_address(conn, "Będzino 87", "Będzino") == \
+        (54.2088119, 15.9835218)

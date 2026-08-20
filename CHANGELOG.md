@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.16.1
+
+- **Fix bloker: 0.16.0 odtwarzało dokładnie ten błąd, który miało
+  naprawić — współrzędne KAŻDEJ z 12 istniejących stacji zostałyby
+  nadpisane pozycją telefonu przy najbliższym zapisie tankowania.**
+  `_COORD_PRIORITY` dawało `gps_phone`(1) > `legacy`(0) — a migracja v11
+  nadaje `source='legacy'` wszystkim stacjom sprzed 0.16.0. Przywrócona
+  reguła sprzed 0.16.0: pozycja telefonu tylko UZUPEŁNIA puste
+  współrzędne, nigdy nie nadpisuje; NADPISAĆ (skorygować) może wyłącznie
+  inne źródło geokodowane (adres z paragonu/OSM). Znaleziony przez
+  `/code-review` przed jakimikolwiek stratami danych na produkcji.
+- **Fix: `POST /api/receipts/parse` przestaje zapisywać do `stations`.**
+  Każdy skan paragonu — także źle odczytany albo porzucony bez zapisania
+  tankowania — zostawiał trwałą „stację-ducha" z zerem tankowań (dokładnie
+  to, co narzędzie porządków z tego samego wydania miało sprzątać). Skan
+  jest teraz czystym podglądem (`resolve_station(persist=False)`);
+  jedynym pisarzem jest zapis tankowania, który czyta geokodowane
+  współrzędne z załącznika skanu zamiast zawsze brać pozycję telefonu.
+- **Fix: `compose_name()` degradowało do gołej marki ZA WCZEŚNIE** —
+  paragon z marką i ulicą, ale bez miasta, kolidował z całą siecią pod
+  jedną nazwą ("Orlen"), czyli w błąd, który 0.16.0 miało usunąć. Nowa
+  drabina degradacji ulica+miasto → miasto+marka → ulica+marka → sama
+  marka (ostatnia deska ratunku); `resolve_station()` w ogóle nie tworzy
+  stacji z samej marki.
+- **Fix: zapytanie do Nominatim bez ulicy wysyłało `street=<miasto>`**
+  (gwarantowane pudło, zapamiętywane w cache bezterminowo). Geokodowanie
+  dostaje teraz `street`/`city` osobno; puste pola są pomijane.
+- Kanonizacja marki/adresu z paragonu (`ORLEN`→`Orlen`, `BĘDZINO`→
+  `Będzino`) — SQLite dopasowuje `brand`/`name` dokładnym stringiem, więc
+  bez tego ten sam fizyczny obiekt (ORLEN vs Orlen) tworzył dwie stacje.
+- **TTL dla pudeł geokodowania** (30 dni) — dawniej brak trafienia
+  blokował adres bezterminowo (`resolved_at` zapisywane, nigdy nie
+  czytane). **Kontrola miasta** w odpowiedzi Nominatim — bez niej
+  trafienie w adres centrali spółki (np. Płock dla paragonów ORLEN)
+  lądowało jako źródło najwyższego priorytetu, nieodwracalne przez GPS.
+- **Narzędzie porządków przestaje gubić dane przy scalaniu.** `apply_merge`
+  kasowało bezpowrotnie ref/adres/lepsze współrzędne usuwanej stacji, gdy
+  to ona miała mniej tankowań (dokładnie odwrotność pożądanego). Teraz
+  przenosi brakujące pola tożsamości i lepiej udokumentowane współrzędne
+  do ocalałej stacji przed usunięciem. `apply_enrichment` zmienia `source`
+  TYLKO razem ze współrzędnymi (dawniej oznaczało istniejącą, często
+  telefonową pozycję jako zaufaną „osm" bez jej zmiany) — ta ścieżka
+  naprawia też stacje uszkodzone przez błąd priorytetów wyżej. Kolizja
+  nazw przy wzbogacaniu zgłasza się czytelnym komunikatem zamiast
+  surowego błędu SQLite.
+- **Duplikaty grupowane klastrami, nie parami.** Trzy stacje w promieniu
+  100 m dawały trzy pary — zaznaczenie wszystkich kończyło się jednym
+  scaleniem i dwoma błędami „Stacja nie istnieje". Teraz jeden ocalały na
+  klaster.
+- **Podgląd porządków rozdzielony na dwa żądania.** Duplikaty (czysty
+  SQLite, milisekundy) i braki marki/adresu (Overpass — jedno zapytanie
+  sieciowe NA STACJĘ, do ~84 s na 12 stacjach) były jednym żądaniem;
+  duplikaty ginęły razem z timeoutem sieciowym. `GET
+  /api/stations/cleanup/enrich` jest teraz osobny, limitowany
+  (8 stacji/przebieg) i throttlowany.
+- Front: nazwy stacji w karcie porządków escapowane (`proposed_name`
+  pochodzi teraz z OSM — bazy edytowalnej przez kogokolwiek, nie tylko od
+  użytkownika); przycisk „Zastosuj" ma `try/catch` i nie zostaje trwale
+  wyszarzony po błędzie; podpowiedź OSM w formularzu jest teraz klikalna,
+  nie wpisuje się do pola sama (drugi cichy fallback, odblokowany przez
+  usunięcie pierwszego w 0.16.0).
+- Pełna diagnoza (`/code-review`) i plan w `docs/PLAN-0.16.1-fixes.md`.
+
 ## 0.16.0
 
 - **Fix: stacja z paragonu (📷) nigdy nie trafiała do formularza —

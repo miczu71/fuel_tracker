@@ -72,24 +72,40 @@ def test_normalize_tolerates_garbage():
 
 # ── adres stacji z paragonu (0.16.0, docs/PLAN-0.16.0-stations.md) ─────────
 
-def test_normalize_composes_station_from_address():
+def test_normalize_extracts_station_address_fields():
     """Prawdziwy kształt danych z receipt_orlen_fleet.jpg (Będzino, stacja
-    nr 4282) — nazwa musi wyjść z adresu, nie z gołego station_name."""
+    nr 4282). 0.16.1: normalize() już nie SKŁADA nazwy z adresu — to robi
+    wyłącznie stations.resolve_station() (web.py), żeby konwencja nazwy była
+    ustalana w jednym miejscu. "station" zostaje surowym fallbackiem
+    (station_name), pola station_* są kanonizowane (ORLEN → Orlen)."""
     n = receipts.normalize({
         "receipt_type": "fleet_card", "station_name": "ORLEN Będzino",
-        "station_brand": "Orlen", "station_street": "Będzino 87",
-        "station_city": "Będzino", "station_postcode": "76-037",
+        "station_brand": "ORLEN", "station_street": "BĘDZINO 87",
+        "station_city": "BĘDZINO", "station_postcode": "76-037",
         "station_ref": "4282",
         "date": "2026-07-03", "time": "15:56", "odometer_km": 31462,
         "fuel_name": "", "fuel_volume_l": 52.47, "fuel_price_per_l": 0,
         "fuel_total": 357.85, "currency": "PLN", "non_fuel_items": [],
     }, "PB95")
-    assert n["station"] == "Będzino 87, Będzino - Orlen"
-    assert n["station_brand"] == "Orlen"
-    assert n["station_street"] == "Będzino 87"
+    assert n["station"] == "ORLEN Będzino"  # surowy fallback, nie złożony
+    assert n["station_brand"] == "Orlen"  # kanonizowane z ORLEN
+    assert n["station_street"] == "Będzino 87"  # kanonizowane z BĘDZINO 87
     assert n["station_city"] == "Będzino"
     assert n["station_postcode"] == "76-037"
     assert n["station_ref"] == "4282"
+
+
+def test_canon_brand_and_place_preserve_mixed_case_and_diacritics():
+    """Kanonizacja (0.16.1, Krok 3) nie psuje wejścia, które model już oddał
+    poprawnie — tylko WERSALIKI dostają .title()/mapę marek."""
+    assert receipts._canon_brand("Orlen") == "Orlen"
+    assert receipts._canon_brand("ORLEN") == "Orlen"
+    assert receipts._canon_brand("PKN ORLEN") == "Orlen"
+    assert receipts._canon_brand("Circle K") == "Circle K"
+    assert receipts._canon_brand(None) is None
+    assert receipts._canon_place("Maślicka 218") == "Maślicka 218"
+    assert receipts._canon_place("BĘDZINO 87") == "Będzino 87"
+    assert receipts._canon_place(None) is None
 
 
 def test_normalize_falls_back_to_station_name_without_address():
@@ -311,14 +327,18 @@ def test_expense_links_attachment(client):
 
 def test_parse_endpoint_resolves_station_from_receipt_address(client, monkeypatch):
     """0.16.0: /api/receipts/parse geokoduje adres z paragonu i zwraca
-    stację z PRAWDZIWYMI współrzędnymi — nie z pozycji telefonu."""
+    stację z PRAWDZIWYMI współrzędnymi — nie z pozycji telefonu. 0.16.1:
+    receipts.py już nie importuje stations (Krok 7) — resolve_station jest
+    wołane z web.py (stn), więc stub trafia w fuel_tracker.stations.geocode
+    wprost, nie przez receipts.stations."""
+    from fuel_tracker import stations as stn_mod
     parsed_with_address = dict(FLEET_PARSED, station_name="ORLEN Będzino",
                                station_brand="Orlen", station_street="Będzino 87",
                                station_city="Będzino", station_postcode="76-037",
                                station_ref="4282")
     monkeypatch.setattr(receipts, "analyze",
                         lambda path, config: parsed_with_address)
-    monkeypatch.setattr(receipts.stations.geocode, "geocode_address",
+    monkeypatch.setattr(stn_mod.geocode, "geocode_address",
                         lambda *a, **kw: (54.2088119, 15.9835218))
 
     body = _parse_receipt(client).get_json()["parsed"]
@@ -326,6 +346,25 @@ def test_parse_endpoint_resolves_station_from_receipt_address(client, monkeypatc
     assert body["station_source"] == "address"
     assert body["latitude"] == 54.2088119
     assert body["longitude"] == 15.9835218
+    # Krok 1b: skan JEST TYLKO podglądem — nie tworzy stacji. Tworzenie
+    # dzieje się wyłącznie przy zapisie tankowania (web.py: _remember_station).
+    assert client.get("/api/stations").get_json() == []
+
+
+def test_parse_endpoint_does_not_create_station_on_geocode_miss(client, monkeypatch):
+    """Regresja 0.16.0: skan bez trafienia geokodowania tworzył stację z
+    NULL współrzędnymi i source='legacy', permanentnie — nawet porzucony
+    bez zapisu. 0.16.1: żaden skan nie zapisuje do `stations`."""
+    from fuel_tracker import stations as stn_mod
+    parsed_with_address = dict(FLEET_PARSED, station_name="Nieznana",
+                               station_brand="Orlen", station_street="Nigdzie 1",
+                               station_city="Nikąd")
+    monkeypatch.setattr(receipts, "analyze",
+                        lambda path, config: parsed_with_address)
+    monkeypatch.setattr(stn_mod.geocode, "geocode_address",
+                        lambda *a, **kw: None)
+    _parse_receipt(client)
+    assert client.get("/api/stations").get_json() == []
 
 
 def test_parse_endpoint_keeps_attachment_on_analyze_error(client, monkeypatch):

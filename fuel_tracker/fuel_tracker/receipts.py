@@ -20,6 +20,19 @@ STACJI osobno od adresu centrali spółki (paragony ORLEN pokazują centralę
 w Płocku na górze — trzeba ją pominąć). station_brand/street/city/postcode/
 ref idą do stations.resolve_station() w web.py, żeby stacja powstała
 z realnym adresem zamiast pozycji telefonu.
+
+0.16.1 (docs/PLAN-0.16.1-fixes.md): normalize() już NIE składa nazwy stacji
+(stations.compose_name) i nie importuje modułu stations — to jedyne miejsce,
+które ma o tym decydować, jest resolve_station() (patrz jej docstring
+"jedyne miejsce, które decyduje"); dwa moduły składające tę samą nazwę
+dryfowałyby przy każdej zmianie konwencji. normalize() zwraca surowe
+station_name + pola station_* — web.py bierze nazwę z resolve_station,
+z odwrotem na station_name tylko gdy adres się nie ustalił. Przy okazji
+kanonizacja station_brand/street/city (_canon_brand/_canon_place) — paragony
+drukują je WERSALIKAMI ("ORLEN", "BĘDZINO"), a stations.py dopasowuje po
+dokładnym stringu (SQLite `=` jest wrażliwe na wielkość liter), więc bez tego
+ten sam fizyczny obiekt tworzył dwie stacje zależnie od tego, jak model
+danego dnia oddał wielkość liter.
 """
 from __future__ import annotations
 
@@ -30,7 +43,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import ha_client, stations, vision
+from . import ha_client, vision
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +270,34 @@ def _map_fuel(name: str) -> str | None:
     return name.strip() or None
 
 
+# Marki drukowane WERSALIKAMI na paragonie (0.16.1, Krok 3) — bez kanonizacji
+# ten sam fizyczny Orlen tworzył dwie stacje ("Orlen" vs "ORLEN"), bo
+# stations.py dopasowuje brand+ref i nazwę dokładnym stringiem. Fallback dla
+# marek spoza mapy: .title() (poprawne dla większości polskich nazw).
+_BRAND_CANON = {
+    "ORLEN": "Orlen", "PKN ORLEN": "Orlen", "SHELL": "Shell", "BP": "BP",
+    "LOTOS": "Lotos", "CIRCLE K": "Circle K", "MOYA": "MOYA", "AMIC": "AMIC",
+    "MOL": "MOL", "AVIA": "Avia", "TOTAL": "Total",
+}
+
+
+def _canon_brand(brand: str | None) -> str | None:
+    if not brand:
+        return None
+    return _BRAND_CANON.get(brand.strip().upper(), brand.strip().title())
+
+
+def _canon_place(place: str | None) -> str | None:
+    """Ulica/miasto z paragonu — .title() TYLKO gdy wejście jest w całości
+    wersalikami (paragony drukują "BĘDZINO 87"; str.title() radzi sobie
+    z polskimi znakami), inaczej zostaje bez zmian — nie psuje mieszanej
+    pisowni, którą model czasem już oddaje poprawnie."""
+    if not place:
+        return None
+    place = place.strip()
+    return place.title() if place.isupper() else place
+
+
 def normalize(parsed: dict, default_fuel_type: str = "PB95") -> dict:
     """Surowy wynik modelu → pola formularza tankowania + wydatek Płyny."""
     volume = _num(parsed.get("fuel_volume_l"))
@@ -280,15 +321,16 @@ def normalize(parsed: dict, default_fuel_type: str = "PB95") -> dict:
             items.append({"description": desc, "total": cost})
     odo = parsed.get("odometer_km")
     fuel = _map_fuel(str(parsed.get("fuel_name") or ""))
-    station_brand = (parsed.get("station_brand") or "").strip() or None
-    station_street = (parsed.get("station_street") or "").strip() or None
-    station_city = (parsed.get("station_city") or "").strip() or None
+    station_brand = _canon_brand(parsed.get("station_brand"))
+    station_street = _canon_place(parsed.get("station_street"))
+    station_city = _canon_place(parsed.get("station_city"))
     station_postcode = (parsed.get("station_postcode") or "").strip() or None
     station_ref = (parsed.get("station_ref") or "").strip() or None
-    # Nazwa z adresu (konwencja "{ulica} {nr}, {miasto} - {Marka}"), z odwrotem
-    # na station_name modelu, gdy paragon nie miał rozbitego adresu.
-    station = stations.compose_name(station_street, station_city, station_brand) \
-        or (parsed.get("station_name") or "").strip() or None
+    # Surowy nagłówek stacji z modelu — TYLKO fallback, gdy paragon nie miał
+    # rozbitego adresu. Nazwę docelową (konwencja "{ulica} {nr}, {miasto} -
+    # {Marka}") ustala WYŁĄCZNIE stations.resolve_station() w web.py — patrz
+    # docstring modułu, 0.16.1.
+    station = (parsed.get("station_name") or "").strip() or None
     return {
         "receipt_type": parsed.get("receipt_type") or "other",
         "date": dt,

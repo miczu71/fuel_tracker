@@ -149,7 +149,12 @@ def export_json(conn: sqlite3.Connection) -> dict:
 def import_json(conn: sqlite3.Connection, payload: dict) -> dict:
     """Pełne zastąpienie (nie merge): DELETE+INSERT każdej tabeli w jednej
     transakcji. Wymaga dokładnej zgodności schema_version — międzywersyjne
-    przywracanie idzie przez plik .db (auto-migrujący), nie przez JSON."""
+    przywracanie idzie przez plik .db (auto-migrujący), nie przez JSON.
+
+    geocode_cache (0.16.1, Krok 7): to cache Nominatim, nie dane
+    użytkownika — celowo POZA _ALL_TABLES/eksportem, ale czyszczony tutaj,
+    żeby "pełne zastąpienie" nie zostawiało cudzych zapamiętanych adresów
+    z poprzedniej instalacji."""
     version = payload.get("schema_version")
     if version != current_schema_version():
         raise BackupError(
@@ -159,6 +164,7 @@ def import_json(conn: sqlite3.Connection, payload: dict) -> dict:
     tables = payload.get("tables") or {}
     conn.execute("PRAGMA foreign_keys = OFF")
     try:
+        conn.execute("DELETE FROM geocode_cache")
         for table in _ALL_TABLES:
             conn.execute(f"DELETE FROM {table}")
         for table in _ALL_TABLES:

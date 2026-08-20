@@ -15,18 +15,17 @@ def test_haversine_known_distance():
 
 
 def test_upsert_station_insert_and_fill_gaps(conn):
-    sid = stn.upsert_station(conn, "Stacja A")
-    row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
+    row = stn.upsert_station(conn, "Stacja A")
+    sid = row["id"]
     assert row["latitude"] is None
 
     # Drugi zapis uzupełnia brakujące współrzędne i markę…
-    assert stn.upsert_station(conn, "Stacja A", *ST_A, brand="MarkaA") == sid
-    row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
+    row = stn.upsert_station(conn, "Stacja A", *ST_A, brand="MarkaA")
+    assert row["id"] == sid
     assert row["latitude"] == ST_A[0] and row["brand"] == "MarkaA"
 
     # …ale nie nadpisuje już ustawionych.
-    stn.upsert_station(conn, "Stacja A", 0.0, 0.0, brand="MarkaB")
-    row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
+    row = stn.upsert_station(conn, "Stacja A", 0.0, 0.0, brand="MarkaB")
     assert row["latitude"] == ST_A[0] and row["brand"] == "MarkaA"
 
 
@@ -206,9 +205,9 @@ def test_resolve_station_nothing_known_returns_empty(conn):
 
 def test_upsert_station_dedup_by_brand_and_ref(conn):
     sid = stn.upsert_station(conn, "Będzino 87, Będzino - Orlen",
-                             brand="Orlen", ref="4282")
+                             brand="Orlen", ref="4282")["id"]
     same = stn.upsert_station(conn, "Będzino 87, Będzino - Orlen",
-                              brand="Orlen", ref="4282")
+                              brand="Orlen", ref="4282")["id"]
     assert same == sid
     assert conn.execute(
         "SELECT COUNT(*) FROM stations WHERE ref = '4282'"
@@ -220,8 +219,35 @@ def test_upsert_station_gps_phone_never_downgrades_address_source(conn):
     (przyczyna nr 5) — nie może nadpisać współrzędnych z adresu/geokodowania,
     nawet gdy trafia jako kolejny zapis tej samej stacji."""
     sid = stn.upsert_station(conn, "Stacja A", 54.2088, 15.9835,
-                             source="nominatim")
+                             source="nominatim")["id"]
     stn.upsert_station(conn, "Stacja A", 54.30, 16.00, source="gps_phone")
+    row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
+    assert row["latitude"] == 54.2088
+    assert row["source"] == "nominatim"
+
+
+def test_upsert_station_gps_phone_never_downgrades_legacy_source(conn):
+    """Regresja 0.16.0 (bug bloker naprawiony 0.16.1, Krok 1a): _COORD_
+    PRIORITY dawało gps_phone(1) > legacy(0), więc KAŻDA z 12 istniejących
+    produkcyjnych stacji (source='legacy' po migracji v11) miała współrzędne
+    nadpisane pozycją telefonu przy najbliższym zapisie tankowania — dokładnie
+    ten sam bug, który 0.16.0 miało naprawić. Jedyny istniejący test regresji
+    pokrywał tylko parę nominatim/gps_phone i tego nie łapał."""
+    sid = stn.upsert_station(conn, "Stacja A", 54.2088, 15.9835,
+                             source="legacy")["id"]
+    stn.upsert_station(conn, "Stacja A", 54.30, 16.00, source="gps_phone")
+    row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
+    assert row["latitude"] == 54.2088
+    assert row["source"] == "legacy"
+
+
+def test_upsert_station_nominatim_still_upgrades_legacy_source(conn):
+    """Korekta (nie tylko uzupełnienie) musi nadal działać: adres z paragonu
+    (nominatim) POPRAWIA stację zapisaną wcześniej jako legacy/gps_phone —
+    to właśnie ta ścieżka naprawia stacje uszkodzone przez bug 1a."""
+    sid = stn.upsert_station(conn, "Stacja A", 54.30, 16.00,
+                             source="legacy")["id"]
+    stn.upsert_station(conn, "Stacja A", 54.2088, 15.9835, source="nominatim")
     row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
     assert row["latitude"] == 54.2088
     assert row["source"] == "nominatim"
@@ -229,17 +255,16 @@ def test_upsert_station_gps_phone_never_downgrades_address_source(conn):
 
 def test_upsert_station_gps_phone_sets_coords_on_brand_new_station(conn):
     # Stacja bez adresu — pozycja telefonu jest lepsza niż nic.
-    sid = stn.upsert_station(conn, "Stacja Bez Adresu", 54.30, 16.00,
+    row = stn.upsert_station(conn, "Stacja Bez Adresu", 54.30, 16.00,
                              source="gps_phone")
-    row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
     assert row["latitude"] == 54.30
 
 
-# ── porządki: duplikaty + braki (0.16.0) ────────────────────────────────
+# ── porządki: duplikaty + braki (0.16.0, klastry+repair 0.16.1) ─────────
 
 def test_find_duplicate_stations_and_apply_merge(conn, vehicle_id):
-    ghost = stn.upsert_station(conn, "Wrocław - Orlen", *ST_A)
-    real = stn.upsert_station(conn, "Szybowcowa 27, Wrocław - Orlen", *ST_A)
+    ghost = stn.upsert_station(conn, "Wrocław - Orlen", *ST_A)["id"]
+    real = stn.upsert_station(conn, "Szybowcowa 27, Wrocław - Orlen", *ST_A)["id"]
     conn.execute(
         """INSERT INTO fillups (vehicle_id, date, odometer, volume_l,
            price_per_l, total_cost, station)
@@ -264,28 +289,126 @@ def test_apply_merge_rejects_unknown_ids(conn):
         stn.apply_merge(conn, 1, 2)
 
 
+def test_apply_merge_keeps_removed_identity_and_better_coords(conn):
+    """Regresja 0.16.0 (naprawiona 0.16.1, Krok 4a): DELETE kasował
+    bezpowrotnie ref/adres/lepsze współrzędne usuwanej stacji, jeśli to ona
+    miała mniej tankowań — na produkcji dokładnie ten scenariusz (legacy
+    z pozycją telefonu i więcej tankowań kontra świeżo zgeokodowana
+    z paragonu i 1 tankowaniem)."""
+    keep = stn.upsert_station(conn, "Wrocław - Orlen", 54.30, 16.00,
+                              source="legacy")["id"]
+    remove = stn.upsert_station(
+        conn, "Maślicka 218, Wrocław - Orlen", 54.2088, 15.9835,
+        brand="Orlen", ref="4282", street="Maślicka 218", city="Wrocław",
+        postcode="54-104", source="nominatim")["id"]
+    stn.apply_merge(conn, keep, remove)
+    row = conn.execute("SELECT * FROM stations WHERE id = ?", (keep,)).fetchone()
+    assert row["ref"] == "4282" and row["street"] == "Maślicka 218"
+    assert row["postcode"] == "54-104"
+    assert row["latitude"] == 54.2088  # lepsze źródło (nominatim) przejęte
+    assert row["source"] == "nominatim"
+
+
+def test_apply_merge_does_not_overwrite_ref_on_conflict(conn):
+    # Trzecia, niepowiązana stacja trzyma już (Orlen, 9999) — transfer refa
+    # z "remove" (inny brand, ten sam numer) na "keep" (już ma brand=Orlen)
+    # utworzyłby duplikat pary (brand, ref) łamiący UNIQUE — musi być pominięty.
+    stn.upsert_station(conn, "Inna Stacja", brand="Orlen", ref="9999")
+    keep = stn.upsert_station(conn, "Wrocław - Orlen", brand="Orlen")["id"]
+    remove = stn.upsert_station(conn, "Duplikat", brand="BP", ref="9999")["id"]
+    stn.apply_merge(conn, keep, remove)
+    row = conn.execute("SELECT ref FROM stations WHERE id = ?", (keep,)).fetchone()
+    assert row["ref"] is None  # kolidowałoby z UNIQUE(brand, ref) — nie przeniesione
+
+
+def test_find_duplicate_stations_clusters_three_into_one_pair_set(conn):
+    """Regresja 0.16.0 (naprawiona 0.16.1, Krok 4c): trzy stacje w klastrze
+    dawały trzy PARY; zaznaczenie wszystkich kończyło się jednym scaleniem
+    i dwoma ValueError("Stacja nie istnieje"), bo wcześniejsze scalenie
+    kasowało wiersz, na który wskazywała kolejna para."""
+    a = stn.upsert_station(conn, "Stacja A", *ST_A)["id"]
+    b = stn.upsert_station(conn, "Stacja B", ST_A[0] + 0.0003, ST_A[1])["id"]
+    c = stn.upsert_station(conn, "Stacja C", ST_A[0] + 0.0006, ST_A[1])["id"]
+
+    dups = stn.find_duplicate_stations(conn)
+    assert len(dups) == 2  # jeden ocalały na klaster, nie 3 pary
+    keep_ids = {d["keep_id"] for d in dups}
+    assert len(keep_ids) == 1
+    keep_id = keep_ids.pop()
+    assert {keep_id, *[d["remove_id"] for d in dups]} == {a, b, c}
+
+    for d in dups:
+        stn.apply_merge(conn, d["keep_id"], d["remove_id"])  # nie rzuca
+    assert conn.execute("SELECT COUNT(*) FROM stations").fetchone()[0] == 1
+
+
 def test_find_enrichable_stations_and_apply(conn, monkeypatch):
-    sid = stn.upsert_station(conn, "Wrocław - Orlen", *ST_A)  # brak brand/street
-    monkeypatch.setattr(stn, "overpass_lookup", lambda lat, lon, radius=None: [
+    sid = stn.upsert_station(conn, "Wrocław - Orlen", *ST_A)["id"]  # brak brand/street
+    monkeypatch.setattr(stn, "_overpass_raw", lambda lat, lon, radius_m=None: [
         {"name": "Orlen", "brand": "Orlen", "street": "Maślicka 218",
          "city": "Wrocław", "postcode": "54-104", "latitude": ST_A[0],
          "longitude": ST_A[1], "distance_m": 5},
     ])
-    props = stn.find_enrichable_stations(conn)
+    result = stn.find_enrichable_stations(conn)
+    props = result["proposals"]
     assert len(props) == 1
+    assert result["checked"] == 1 and result["remaining"] == 0
+    assert result["errors"] == []
     assert props[0]["station_id"] == sid
     assert props[0]["proposed_name"] == "Maślicka 218, Wrocław - Orlen"
 
     stn.apply_enrichment(conn, sid, name=props[0]["proposed_name"],
                          brand=props[0]["brand"], street=props[0]["street"],
-                         city=props[0]["city"], postcode=props[0]["postcode"])
+                         city=props[0]["city"], postcode=props[0]["postcode"],
+                         latitude=props[0]["latitude"],
+                         longitude=props[0]["longitude"])
     row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
     assert row["name"] == "Maślicka 218, Wrocław - Orlen"
     assert row["brand"] == "Orlen"
+    assert row["source"] == "osm"  # legacy < osm — współrzędne przejęte
+
+
+def test_find_enrichable_stations_respects_limit(conn, monkeypatch):
+    for i in range(3):
+        stn.upsert_station(conn, f"Stacja {i}", ST_A[0] + i * 0.01, ST_A[1])
+    calls = []
+
+    def fake_raw(lat, lon, radius_m=None):
+        calls.append((lat, lon))
+        return []
+    monkeypatch.setattr(stn, "_overpass_raw", fake_raw)
+    result = stn.find_enrichable_stations(conn, limit=2)
+    assert result["checked"] == 2 and result["remaining"] == 1
+    assert len(calls) == 2
+
+
+def test_find_enrichable_stations_reports_overpass_errors(conn, monkeypatch):
+    stn.upsert_station(conn, "Stacja A", *ST_A)
+
+    def boom(lat, lon, radius_m=None):
+        raise OSError("network down")
+    monkeypatch.setattr(stn, "_overpass_raw", boom)
+    result = stn.find_enrichable_stations(conn)
+    assert result["proposals"] == []
+    assert len(result["errors"]) == 1
+
+
+def test_find_enrichable_stations_skips_proposal_without_street_or_city(conn, monkeypatch):
+    """Krok 4b: propozycja bez ulicy i bez miasta (goła marka) nie jest
+    lepsza niż to, co już mamy — apply_enrichment by ją przepisała jako
+    rename całej historii tankowań, np. "Wrocław - Orlen" → "Orlen"."""
+    stn.upsert_station(conn, "Wrocław - Orlen", *ST_A)
+    monkeypatch.setattr(stn, "_overpass_raw", lambda lat, lon, radius_m=None: [
+        {"name": "Orlen", "brand": "Orlen", "street": None, "city": None,
+         "postcode": None, "latitude": ST_A[0], "longitude": ST_A[1],
+         "distance_m": 5},
+    ])
+    result = stn.find_enrichable_stations(conn)
+    assert result["proposals"] == []
 
 
 def test_apply_enrichment_rewrites_fillups_station_name(conn, vehicle_id):
-    sid = stn.upsert_station(conn, "Wrocław - Orlen", *ST_A)
+    sid = stn.upsert_station(conn, "Wrocław - Orlen", *ST_A)["id"]
     conn.execute(
         """INSERT INTO fillups (vehicle_id, date, odometer, volume_l,
            price_per_l, total_cost, station)
@@ -296,3 +419,25 @@ def test_apply_enrichment_rewrites_fillups_station_name(conn, vehicle_id):
                          brand="Orlen")
     row = conn.execute("SELECT station FROM fillups").fetchone()
     assert row["station"] == "Maślicka 218, Wrocław - Orlen"
+
+
+def test_apply_enrichment_does_not_change_source_without_coords(conn):
+    """Krok 4b: source zmienia się TYLKO razem ze współrzędnymi — dawniej
+    'source = osm' był bezwarunkowy, więc wzbogacenie samą marką/adresem
+    (bez współrzędnych) oznaczało istniejącą pozycję jako zaufaną i
+    blokowało jej późniejszą korektę."""
+    sid = stn.upsert_station(conn, "Wrocław - Orlen", 54.30, 16.00,
+                             source="gps_phone")["id"]
+    stn.apply_enrichment(conn, sid, name="Maślicka 218, Wrocław - Orlen",
+                         brand="Orlen", street="Maślicka 218")
+    row = conn.execute("SELECT * FROM stations WHERE id = ?", (sid,)).fetchone()
+    assert row["source"] == "gps_phone"
+    assert row["latitude"] == 54.30  # bez podanych coords — bez zmiany
+
+
+def test_apply_enrichment_rejects_name_collision(conn):
+    stn.upsert_station(conn, "Maślicka 218, Wrocław - Orlen", *ST_A)
+    sid = stn.upsert_station(conn, "Wrocław - Orlen",
+                             ST_A[0] + 0.001, ST_A[1])["id"]
+    with pytest.raises(ValueError):
+        stn.apply_enrichment(conn, sid, name="Maślicka 218, Wrocław - Orlen")
