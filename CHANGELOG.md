@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.3
+
+- **Fix: propozycja z OSM bez numeru domu wstawiała dosłowny napis "None"
+  do nazwy stacji** (np. „Wrocławska None, Krępice - BP"). Znalezione na
+  żywych danych produkcyjnych natychmiast po 0.16.2 — pierwszy raz, gdy
+  odpowiedź z Overpass w ogóle dotarła do tego kodu (wcześniej 406
+  blokowało wszystko). `f"{street} {house}"` z `house=None` renderuje
+  Pythonowe `None` jako tekst; teraz ulica bez numeru zostaje samą ulicą.
+
 ## 0.16.2
 
 - **Fix: Overpass odrzucał KAŻDE zapytanie (406 Not Acceptable) brakiem

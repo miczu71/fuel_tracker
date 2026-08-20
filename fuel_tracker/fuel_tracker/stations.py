@@ -104,7 +104,11 @@ def _tags_to_result(tags: dict, elat: float, elon: float, lat: float,
     street = tags.get("addr:street")
     house = tags.get("addr:housenumber")
     city = tags.get("addr:city")
-    full_street = f"{street} {house}".strip() if street else None
+    # 0.16.2: węzeł OSM ze street ale bez housenumber renderował dosłowne
+    # "None" w nazwie (f"{street} {house}" z house=None) — odkryte na
+    # produkcji dopiero po naprawie 406 z Overpass (0.16.2), pierwszy raz
+    # gdy realna odpowiedź w ogóle dotarła do tego kodu.
+    full_street = f"{street} {house}".strip() if street and house else street
     name = compose_name(full_street, city, brand) or tags.get("name")
     if not name:
         return None

@@ -133,6 +133,29 @@ def test_overpass_lookup_builds_name_from_osm_address_tags(monkeypatch):
     assert results[0]["city"] == "Wrocław"
 
 
+def test_overpass_lookup_omits_house_number_when_absent(monkeypatch):
+    """Regresja 0.16.2, znaleziona na żywych danych produkcyjnych zaraz po
+    naprawie 406 (Krok User-Agent) — pierwszy raz, gdy realna odpowiedź
+    Overpass w ogóle dotarła do tego kodu. Węzeł OSM ma addr:street, ale
+    nie ma addr:housenumber; f"{street} {house}" z house=None renderowało
+    dosłowny napis "Wrocławska None" w nazwie i propozycji wzbogacenia."""
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"elements": [{
+                "type": "node", "lat": ST_A[0], "lon": ST_A[1],
+                "tags": {"brand": "BP", "addr:street": "Wrocławska",
+                        "addr:city": "Krępice"},
+            }]}
+    monkeypatch.setattr(stn.requests, "post", lambda *a, **kw: FakeResp())
+    results = stn.overpass_lookup(*ST_A)
+    assert results[0]["street"] == "Wrocławska"
+    assert "None" not in results[0]["name"]
+    assert results[0]["name"] == "Wrocławska, Krępice - BP"
+
+
 # ── compose_name / resolve_station (0.16.0) ─────────────────────────────
 
 def test_compose_name_degrades_gracefully():
