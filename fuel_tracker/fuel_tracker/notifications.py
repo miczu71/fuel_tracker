@@ -81,18 +81,24 @@ def _lease_state(settings: dict, values: dict) -> str | None:
 def _messages(alert: str, state: str, values: dict) -> tuple[str, str]:
     left = values.get("budget_left_month")
     forecast = _fmt(values.get("month_forecast_cost"))
+    # Budżet liczy tylko kartę (0.17.0) — prognoza w jego komunikatach musi
+    # być na tej samej podstawie co budget_left_month, inaczej tekst miesza
+    # dwie różne kwoty. Fallback na pełną prognozę dla instancji sprzed
+    # 0.17.0, zanim publisher wyśle month_card_forecast_cost.
+    budget_forecast = _fmt(values.get("month_card_forecast_cost",
+                                      values.get("month_forecast_cost")))
     annual = _fmt(values.get("projected_annual_km"))
     margin = values.get("lease_km_margin")
     texts = {
         ("budget", "warning"): (
             "⛽ Budżet paliwowy na wyczerpaniu",
             f"Zostało {_fmt(left, 2)} PLN budżetu paliwowego na ten miesiąc. "
-            f"Prognoza na cały miesiąc: {forecast} PLN."),
+            f"Prognoza na cały miesiąc: {budget_forecast} PLN."),
         ("budget", "exceeded"): (
             "⛽ Budżet paliwowy przekroczony",
             f"Budżet miesiąca przekroczony o "
             f"{_fmt(abs(left) if left is not None else None, 2)} PLN. "
-            f"Prognoza na cały miesiąc: {forecast} PLN."),
+            f"Prognoza na cały miesiąc: {budget_forecast} PLN."),
         ("cheap_fuel", "cheap"): (
             "⛽ Tanie paliwo w regionie",
             f"Cena regionalna {_fmt(values.get('region_fuel_price'), 2)} PLN/L "

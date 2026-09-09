@@ -137,6 +137,30 @@ def test_zero_budget_is_silent(conn, vehicle_id, notify, sent):
     assert sent == []
 
 
+def test_budget_message_uses_card_only_forecast():
+    """0.17.0: prognoza w komunikacie budżetu musi być na tej samej
+    podstawie co budget_left_month (tylko karta) — inaczej tekst miesza
+    dwie różne kwoty (np. "zostało X z budżetu kartowego" obok prognozy
+    liczonej z tankowań prywatnych)."""
+    _, msg = notifications._messages("budget", "warning", {
+        "budget_left_month": 80.0,
+        "month_forecast_cost": 900.0,        # całość (karta + prywatne)
+        "month_card_forecast_cost": 650.0,   # tylko karta — ta ma się liczyć
+    })
+    assert "650" in msg
+    assert "900" not in msg
+
+
+def test_budget_message_falls_back_to_full_forecast_without_card_forecast():
+    # Zgodność wsteczna: brak month_card_forecast_cost (np. instancja przed
+    # 0.17.0 zanim publisher wyśle nowe pole) nie może wywalić komunikatu.
+    _, msg = notifications._messages("budget", "warning", {
+        "budget_left_month": 80.0,
+        "month_forecast_cost": 900.0,
+    })
+    assert "900" in msg
+
+
 def test_budget_alert_works_with_real_settings_dict(conn, vehicle_id, notify, sent):
     """Regresja B1: budżet dziś żyje w vehicles.monthly_fuel_budget (migracja
     #9, 0.11.0), nie w settings. evaluate() musi działać na PRAWDZIWYM

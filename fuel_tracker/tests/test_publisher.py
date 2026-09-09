@@ -157,7 +157,7 @@ def test_cumulative_monetary_sensors_require_state_class_total():
 
 def test_last_reset_sensors_get_value_and_last_reset_templates():
     payloads = publisher.discovery_payloads("fuel_tracker", "AutoA Fuel", "0.14.0")
-    for slug in ("month_fuel_cost", "ytd_fuel_cost"):
+    for slug in ("month_fuel_cost", "month_card_fuel_cost", "ytd_fuel_cost"):
         topic = f"homeassistant/sensor/fuel_tracker/{slug}/config"
         p = payloads[topic]
         assert p["value_template"] == "{{ value_json.value }}"
@@ -174,6 +174,7 @@ def test_last_reset_sensors_get_value_and_last_reset_templates():
 def test_render_values_wraps_last_reset_sensors_in_json():
     out = publisher.render_values({
         "month_fuel_cost": 783.8,
+        "month_card_fuel_cost": 429.79,
         "month_fuel_cost_last_reset": "2026-07-01T00:00:00+02:00",
         "ytd_fuel_cost": 4166.32,
         "ytd_fuel_cost_last_reset": "2026-01-01T00:00:00+01:00",
@@ -181,6 +182,10 @@ def test_render_values_wraps_last_reset_sensors_in_json():
     import json as _json
     assert _json.loads(out["month_fuel_cost"]) == {
         "value": 783.8, "last_reset": "2026-07-01T00:00:00+02:00"}
+    # month_card_fuel_cost (0.17.0) współdzieli last_reset_key z
+    # month_fuel_cost — ten sam cykl miesięczny, jeden znacznik.
+    assert _json.loads(out["month_card_fuel_cost"]) == {
+        "value": 429.79, "last_reset": "2026-07-01T00:00:00+02:00"}
     assert _json.loads(out["ytd_fuel_cost"]) == {
         "value": 4166.32, "last_reset": "2026-01-01T00:00:00+01:00"}
     # Klucze last_reset_key nie stają się osobnymi topikami.

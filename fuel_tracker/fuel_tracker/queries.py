@@ -52,6 +52,10 @@ def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
     now = now or datetime.now()
     month = now.strftime("%Y-%m")
     month_cost = st.month_fuel_spend(fillups, month)
+    # Budżet dotyczy tylko karty ORLEN Flota — tankowania paid_by='own' nie
+    # mogą go obciążać (0.17.0). month_fuel_cost/ytd_fuel_cost zostają
+    # "całością" (karta + prywatne), żeby nie skakały w LTS.
+    month_card_cost = st.month_fuel_spend(fillups, month, card_only=True)
 
     values: dict = {
         "total_cost": s.total_cost,
@@ -63,22 +67,26 @@ def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
         "avg_price_per_l": s.avg_price_per_l,
         "expenses_total": round(sum(e["cost"] for e in expenses), 2),
         "month_fuel_cost": month_cost,
+        "month_card_fuel_cost": month_card_cost,
         # Znaczniki resetu (0.14.0) dla state_class 'total' + last_reset_value_template
         # w publisher.py — bez nich silnik statystyk HA traktował zerowanie
         # tych liczników jako reset i dopisywał całą nową wartość do sumy LTS.
         "month_fuel_cost_last_reset": _iso_local(f"{month}-01 00:00"),
         "ytd_fuel_cost_last_reset": _iso_local(f"{now:%Y}-01-01 00:00"),
-        "budget_left_month": round(monthly_budget - month_cost, 2)
+        "budget_left_month": round(monthly_budget - month_card_cost, 2)
                              if monthly_budget else None,
         # Tankowania opłacone prywatnie — zastępuje ręczny
         # input_number.suma_moich_wydatkow_na_paliwo w zysk_z_wynajmu_auta.
         "self_paid_fuel_total": round(sum(
-            f["total_cost"] for f in fillups
-            if f.get("paid_by") == "own"), 2),
+            f["total_cost"] for f in fillups if st._is_own(f)), 2),
         # Statystyki 0.4.0
         "estimated_range_km": st.estimated_range_km(s.avg_consumption,
                                                     tank_capacity_l),
         "month_forecast_cost": st.month_forecast_cost(fillups, now),
+        # Prognoza kartowa — używana tylko przez alert budżetu
+        # (notifications._messages), nie ma własnego sensora publikowanego.
+        "month_card_forecast_cost": st.month_forecast_cost(
+            fillups, now, card_only=True),
         "ytd_fuel_cost": st.ytd_fuel_cost(fillups, now.strftime("%Y")),
         "projected_annual_km": st.projected_annual_km(fillups),
         "best_station": st.best_station(fillups),
@@ -119,6 +127,8 @@ def summary(conn: sqlite3.Connection, vehicle_id: int,
     s = st.compute_stats(fillups)
     month = datetime.now().strftime("%Y-%m")
     month_cost = st.month_fuel_spend(fillups, month)
+    # Budżet liczy tylko kartę — patrz komentarz w sensor_values() (0.17.0).
+    month_card_cost = st.month_fuel_spend(fillups, month, card_only=True)
     return {
         "fillup_count": s.fillup_count,
         "total_cost": s.total_cost,
@@ -131,12 +141,13 @@ def summary(conn: sqlite3.Connection, vehicle_id: int,
         "last_fillup": s.last_fillup,
         "expenses_total": round(sum(e["cost"] for e in expenses), 2),
         "self_paid_fuel_total": round(sum(
-            f["total_cost"] for f in fillups
-            if f.get("paid_by") == "own"), 2),
+            f["total_cost"] for f in fillups if st._is_own(f)), 2),
         "month": month,
         "month_fuel_cost": month_cost,
+        "month_card_fuel_cost": month_card_cost,
+        "month_own_fuel_cost": round(month_cost - month_card_cost, 2),
         "monthly_budget": monthly_budget,
-        "budget_left_month": round(monthly_budget - month_cost, 2)
+        "budget_left_month": round(monthly_budget - month_card_cost, 2)
                              if monthly_budget else None,
         "monthly": st.monthly_series(fillups, expenses),
         "consumption_series": [

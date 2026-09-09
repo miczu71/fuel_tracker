@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.17.0
+
+- **Fix: budżet paliwowy liczył tankowania opłacone prywatnie** — oznaczenie
+  tankowania jako „Zapłacone przeze mnie" nie zmieniało pozostałego budżetu
+  ani paska na pulpicie, mimo że prywatne wydatki nie powinny go w ogóle
+  obciążać (budżet dotyczy karty ORLEN Flota). Znalezione na żywych danych:
+  po oznaczeniu tankowania 347,86 PLN jako prywatne `budget_left_month`
+  zostawał na 206,35 zamiast wzrosnąć do 554,21. `month_fuel_spend()`
+  dostał parametr `card_only`, którego używa teraz `budget_left_month`
+  (sensor i pulpit) oraz prognoza w alercie budżetu.
+- **Nowy sensor `month_card_fuel_cost`** — koszt paliwa w bieżącym miesiącu
+  tylko z karty, ten sam, który zasila `budget_left_month`.
+  `month_fuel_cost`/`ytd_fuel_cost` zostają bez zmian znaczenia (całość:
+  karta + prywatne), żeby nie robić skoku w statystykach długoterminowych.
+- Pulpit web UI: pasek budżetu i „Zostało X PLN" liczą się teraz spójnie
+  z jednej podstawy (karta); dodana linijka „+ N PLN prywatnie (poza
+  budżetem)", gdy w miesiącu było prywatne tankowanie.
+
 ## 0.16.3
 
 - **Fix: propozycja z OSM bez numeru domu wstawiała dosłowny napis "None"

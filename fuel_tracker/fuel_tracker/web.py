@@ -1052,9 +1052,9 @@ def create_app(db_path: str, config: dict,
             "monthly_report": st.monthly_report(fillups, expenses),
             "split": {
                 "fuel_card": round(sum(f["total_cost"] for f in fillups
-                                       if f.get("paid_by") != "own"), 2),
+                                       if not st._is_own(f)), 2),
                 "fuel_own": round(sum(f["total_cost"] for f in fillups
-                                      if f.get("paid_by") == "own"), 2),
+                                      if st._is_own(f)), 2),
                 # Po tco_group, nie po nazwie kategorii (patrz
                 # stats._expense_bucket — zmiana nazwy 0.13.0 łamała to).
                 "fluids": round(sum(e["cost"] for e in expenses

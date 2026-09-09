@@ -60,6 +60,18 @@ def test_month_forecast_cost():
     assert st.month_forecast_cost([], now) is None
 
 
+def test_month_forecast_cost_card_only_excludes_private_fillups():
+    # Prognoza budżetu (0.17.0) pomija tankowania paid_by='own'.
+    card = _f("2026-04-05 10:00", 100, vol=40, price=6.20)  # 248 PLN
+    own = _f("2026-04-06 10:00", 140, vol=10, price=6.00)   # 60 PLN
+    own["paid_by"] = "own"
+    now = datetime(2026, 4, 10)
+    assert st.month_forecast_cost([card, own], now, card_only=True) == \
+        round(248.0 / 10 * 30, 2)
+    assert st.month_forecast_cost([card, own], now) == \
+        round(308.0 / 10 * 30, 2)
+
+
 def test_projected_annual_km():
     # 2100 km w 90 dni → ~8517 km/rok
     assert st.projected_annual_km(FILLUPS) == round(2100 / 90 * 365)

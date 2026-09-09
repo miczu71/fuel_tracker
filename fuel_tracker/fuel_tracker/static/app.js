@@ -137,16 +137,24 @@ window.FT = (function () {
       const card = document.getElementById("budget-card");
       card.hidden = false;
       document.getElementById("b-month").textContent = s.month;
-      document.getElementById("b-spent").textContent = fmt(s.month_fuel_cost, 0);
+      // 0.17.0: budżet liczy tylko kartę (month_card_fuel_cost), nie całość
+      // (month_fuel_cost) — inaczej pasek i tekst "zostało" się rozjeżdżają.
+      document.getElementById("b-spent").textContent = fmt(s.month_card_fuel_cost, 0);
       document.getElementById("b-total").textContent = fmt(s.monthly_budget, 0);
-      const pct = Math.min(100, 100 * s.month_fuel_cost / s.monthly_budget);
+      const pct = Math.min(100, 100 * s.month_card_fuel_cost / s.monthly_budget);
       const fill = document.getElementById("b-fill");
       fill.style.width = pct + "%";
-      if (s.month_fuel_cost > s.monthly_budget) fill.classList.add("over");
+      if (s.month_card_fuel_cost > s.monthly_budget) fill.classList.add("over");
       document.getElementById("b-left").textContent =
         s.budget_left_month >= 0
           ? `Zostało ${fmt(s.budget_left_month, 0)} PLN`
           : `Przekroczono o ${fmt(-s.budget_left_month, 0)} PLN`;
+      const ownEl = document.getElementById("b-own");
+      if (ownEl) {
+        ownEl.textContent = s.month_own_fuel_cost > 0
+          ? `+ ${fmt(s.month_own_fuel_cost, 0)} PLN prywatnie (poza budżetem)`
+          : "";
+      }
     }
 
     lineChart("chart-consumption",

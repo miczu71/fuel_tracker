@@ -66,6 +66,10 @@ _SENSORS: list[_Sensor] = [
     _Sensor("expenses_total",       "Expenses Total",       "PLN",      "monetary", "total",            "mdi:receipt"),
     _Sensor("budget_left_month",    "Budget Left Month",    "PLN",      "monetary", None,               "mdi:piggy-bank"),
     _Sensor("month_fuel_cost",      "Month Fuel Cost",      "PLN",      "monetary", "total",            "mdi:calendar-today", "month_fuel_cost_last_reset"),
+    # 0.17.0 — koszt tylko z karty ORLEN Flota (bez tankowań paid_by='own'),
+    # to on zasila budget_left_month; month_fuel_cost zostaje "całością".
+    # Dzieli last_reset_key z month_fuel_cost — ten sam cykl miesięczny.
+    _Sensor("month_card_fuel_cost", "Month Card Fuel Cost", "PLN",      "monetary", "total",            "mdi:credit-card-outline", "month_fuel_cost_last_reset"),
     _Sensor("self_paid_fuel_total", "Self Paid Fuel Total", "PLN",      "monetary", "total",            "mdi:account-cash"),
     # 0.4.0 — ceny regionalne + statystyki
     _Sensor("region_fuel_price",    "Region Fuel Price",    "PLN/L",    None,       "measurement",      "mdi:gas-station-in-use"),

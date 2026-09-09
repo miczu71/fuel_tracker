@@ -14,6 +14,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 
+def _is_own(f: dict) -> bool:
+    """Tankowanie opłacone prywatnie (nie kartą ORLEN Flota)."""
+    return f.get("paid_by") == "own"
+
+
 @dataclass(frozen=True)
 class Segment:
     start_odo: int
@@ -119,7 +124,7 @@ def monthly_series(fillups: list[dict], expenses: list[dict]) -> list[dict]:
     for f in fillups:
         m = f["date"][:7]
         d = months.setdefault(m, blank(m))
-        key = "fuel_own" if f.get("paid_by") == "own" else "fuel"
+        key = "fuel_own" if _is_own(f) else "fuel"
         d[key] += f["total_cost"]
         d["volume"] += f["volume_l"]
     for e in expenses:
@@ -135,9 +140,16 @@ def monthly_series(fillups: list[dict], expenses: list[dict]) -> list[dict]:
     return out
 
 
-def month_fuel_spend(fillups: list[dict], month: str) -> float:
-    """Wydatki na paliwo w miesiącu 'YYYY-MM'."""
-    return round(sum(f["total_cost"] for f in fillups if f["date"][:7] == month), 2)
+def month_fuel_spend(fillups: list[dict], month: str,
+                     card_only: bool = False) -> float:
+    """Wydatki na paliwo w miesiącu 'YYYY-MM'.
+
+    card_only=True pomija tankowania paid_by='own' (prywatne) — budżet
+    paliwowy dotyczy tylko karty ORLEN Flota, nie wydatków z własnej
+    kieszeni użytkownika."""
+    return round(sum(
+        f["total_cost"] for f in fillups
+        if f["date"][:7] == month and not (card_only and _is_own(f))), 2)
 
 
 # ── Statystyki rozszerzone (0.4.0): sensory + strona Statystyki ──────────────
@@ -156,9 +168,10 @@ def ytd_fuel_cost(fillups: list[dict], year: str) -> float:
                      if f["date"][:4] == year), 2)
 
 
-def month_forecast_cost(fillups: list[dict], now: datetime) -> Optional[float]:
+def month_forecast_cost(fillups: list[dict], now: datetime,
+                        card_only: bool = False) -> Optional[float]:
     """Prognoza kosztu paliwa w bieżącym miesiącu (tempo dotychczasowe)."""
-    spent = month_fuel_spend(fillups, now.strftime("%Y-%m"))
+    spent = month_fuel_spend(fillups, now.strftime("%Y-%m"), card_only=card_only)
     if not spent:
         return None
     days_in_month = monthrange(now.year, now.month)[1]
@@ -401,7 +414,7 @@ def monthly_report(fillups: list[dict], expenses: list[dict]) -> list[dict]:
 
     for f in fillups:
         d = row(f["date"][:7])
-        if f.get("paid_by") == "own":
+        if _is_own(f):
             d["fuel_own"] += f["total_cost"]
         else:
             d["fuel_card"] += f["total_cost"]

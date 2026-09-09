@@ -1,5 +1,6 @@
 """REST API i strony (Flask test client, tymczasowa baza SQLite)."""
 import re
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,24 @@ def test_summary_and_budget(client):
     assert s["avg_consumption"] == 6.0
     assert s["monthly_budget"] == 800.0
     assert len(s["monthly"]) == 2
+
+
+def test_budget_excludes_privately_paid_fillups(client):
+    """0.17.0: budget_left_month liczy tylko tankowania z karty (fleet_card).
+    Prywatne (paid_by='own') zostają w month_fuel_cost ("całość"), ale nie
+    obciążają budżetu — inaczej oznaczenie tankowania jako "moje" nie
+    zmieniało pozostałego budżetu, mimo że nie powinno go w ogóle ruszać."""
+    this_month = datetime.now().strftime("%Y-%m")
+    _add_fillup(client, date=f"{this_month}-01T12:00",
+               odometer=1000, volume_l=40)  # karta, 240 PLN
+    _add_fillup(client, date=f"{this_month}-02T12:00",
+               odometer=1300, volume_l=20, paid_by="own")  # prywatne, 120 PLN
+
+    s = client.get("/api/summary").get_json()
+    assert s["month_fuel_cost"] == 360.0
+    assert s["month_card_fuel_cost"] == 240.0
+    assert s["month_own_fuel_cost"] == 120.0
+    assert s["budget_left_month"] == 800.0 - 240.0
 
 
 def test_prefill_uses_ha_odometer(client):

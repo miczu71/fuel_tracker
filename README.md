@@ -60,7 +60,10 @@ pełnymi bakami, sensory MQTT discovery i mobilny web UI po polsku przez ingress
   i zagraniczne, popup ze statystykami stacji.
 - **Tankowania opłacone prywatnie** — checkbox „Zapłacone przeze mnie",
   oznaczenie na liście i mapie, osobny sensor `self_paid_fuel_total`
-  do rozliczenia zysku z wynajmu.
+  do rozliczenia zysku z wynajmu. Nie obciążają budżetu paliwowego
+  (od 0.17.0) — `budget_left_month` liczy tylko tankowania z karty ORLEN
+  Flota, `month_fuel_cost`/`ytd_fuel_cost` nadal pokazują całość
+  (karta + prywatne).
 - **Tankowania za granicą** — wybór waluty w formularzu (domyślnie PLN),
   kurs średni NBP (tabela A) dociągany automatycznie z ręczną korektą;
   statystyki i sensory zawsze w PLN, kwota oryginalna widoczna na liście.
@@ -182,8 +185,9 @@ Stany**.
 | `sensor.<pojazd>_fuel_last_fillup_cost` | PLN | *(brak)* | Kwota ostatniego tankowania — skacze w obie strony, bez wykresu historycznego |
 | `sensor.<pojazd>_fuel_last_fillup_station` | — | — | Stacja ostatniego tankowania |
 | `sensor.<pojazd>_fuel_expenses_total` | PLN | total | Suma wydatków pozapaliwowych |
-| `sensor.<pojazd>_fuel_budget_left_month` | PLN | *(brak)* | Pozostały budżet paliwowy w bieżącym miesiącu — maleje, bez wykresu historycznego |
-| `sensor.<pojazd>_fuel_month_fuel_cost` | PLN | total (`last_reset` co miesiąc) | Wydatki na paliwo w bieżącym miesiącu |
+| `sensor.<pojazd>_fuel_budget_left_month` | PLN | *(brak)* | Pozostały budżet paliwowy w bieżącym miesiącu — tylko tankowania z karty (od 0.17.0), maleje, bez wykresu historycznego |
+| `sensor.<pojazd>_fuel_month_fuel_cost` | PLN | total (`last_reset` co miesiąc) | Wydatki na paliwo w bieżącym miesiącu — całość (karta + prywatne) |
+| `sensor.<pojazd>_fuel_month_card_fuel_cost` | PLN | total (`last_reset` co miesiąc) | Wydatki na paliwo w bieżącym miesiącu tylko z karty ORLEN Flota (od 0.17.0) — to ta liczba zasila `budget_left_month` |
 | `sensor.<pojazd>_fuel_self_paid_fuel_total` | PLN | total | Suma tankowań opłaconych prywatnie („Zapłacone przeze mnie") |
 | `sensor.<pojazd>_fuel_region_fuel_price` | PLN/L | measurement | Cena regionalna paliwa (`price_region`, autocentrum.pl) |
 | `sensor.<pojazd>_fuel_price_vs_region` | PLN/L | measurement | Moja ostatnia cena − cena regionalna (ujemna = taniej) |

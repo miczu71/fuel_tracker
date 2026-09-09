@@ -105,8 +105,20 @@ def test_monthly_series_splits_private_fuel():
     assert series[0]["fuel"] == 240.0
     assert series[0]["fuel_own"] == 180.0
     assert series[0]["volume"] == 70.0
-    # month_fuel_spend (budżet) nadal liczy całość paliwa
+    # month_fuel_spend domyślnie (bez card_only) nadal liczy całość paliwa —
+    # tak zasilane są month_fuel_cost/ytd_fuel_cost.
     assert st.month_fuel_spend(fillups, "2025-01") == 420.0
+    # card_only=True pomija tankowania paid_by='own' — na tym opiera się
+    # budżet paliwowy (0.17.0), żeby prywatne wydatki go nie obciążały.
+    assert st.month_fuel_spend(fillups, "2025-01", card_only=True) == 240.0
+
+
+def test_is_own_treats_missing_paid_by_as_card():
+    # Stare wpisy/drafty bez klucza paid_by (sprzed migracji) mają wpadać do
+    # kosza "karta", nie znikać z budżetu po cichu.
+    assert st._is_own({}) is False
+    assert st._is_own({"paid_by": "fleet_card"}) is False
+    assert st._is_own({"paid_by": "own"}) is True
 
 
 def test_segment_consumption_by_fillup():
