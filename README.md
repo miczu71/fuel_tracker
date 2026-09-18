@@ -181,7 +181,7 @@ Stany**.
 | `sensor.<pojazd>_fuel_last_fillup_date` | timestamp | — | Data ostatniego tankowania |
 | `sensor.<pojazd>_fuel_last_fillup_odometer` | km | measurement | Odometr przy ostatnim tankowaniu |
 | `sensor.<pojazd>_fuel_last_fillup_price` | PLN/L | measurement | Cena litra przy ostatnim tankowaniu |
-| `sensor.<pojazd>_fuel_last_fillup_volume` | L | measurement | Litry ostatniego tankowania |
+| `sensor.<pojazd>_fuel_last_fillup_volume` | L | *(brak)* | Litry ostatniego tankowania — wartość pojedynczego tankowania, nie suma; HA nie dopuszcza `measurement` dla `device_class: volume` |
 | `sensor.<pojazd>_fuel_last_fillup_cost` | PLN | *(brak)* | Kwota ostatniego tankowania — skacze w obie strony, bez wykresu historycznego |
 | `sensor.<pojazd>_fuel_last_fillup_station` | — | — | Stacja ostatniego tankowania |
 | `sensor.<pojazd>_fuel_expenses_total` | PLN | total | Suma wydatków pozapaliwowych |
@@ -204,10 +204,11 @@ Stany**.
 
 > **Wykresy historyczne (0.14.0):** tylko sensory z kolumną `state_class` w
 > tabeli wyżej nadają się na karty `statistics-graph`/`history-graph` z
-> agregacją sumy. Sensory oznaczone *(brak)* (`budget_left_month`,
-> `month_forecast_cost`, `last_fillup_cost`) z natury maleją albo skaczą w
-> obie strony — pokazuj je jako bieżącą wartość (`entities`/`glance`/gauge),
-> nie jako wykres sumy w czasie.
+> agregacją sumy. Sensory oznaczone *(brak)* z natury nie są sumą narastającą:
+> `budget_left_month`, `month_forecast_cost` i `last_fillup_cost` maleją albo
+> skaczą w obie strony; `last_fillup_volume` to wartość pojedynczego
+> tankowania, nie suma — pokazuj je jako bieżącą wartość
+> (`entities`/`glance`/gauge), nie jako wykres sumy w czasie.
 
 ## Powiadomienia (wbudowane od 0.9.0)
 

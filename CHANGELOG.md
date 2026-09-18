@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.1
+
+- **Fix: `sensor.superb_fuel_last_fillup_volume` miał niedozwoloną kombinację
+  `device_class: volume` + `state_class: measurement`** — HA dopuszcza dla
+  `volume` tylko `None`/`total`/`total_increasing`, więc każdy poll zalewał
+  log ostrzeżeniem. `last_fillup_volume` to wartość pojedynczego tankowania
+  (nie suma narastająca), więc dostaje `state_class: None` — dokładnie ten
+  sam wzorzec co `last_fillup_cost` (monetary + None) w tym samym pliku.
+  Dodany test `test_volume_sensors_have_valid_state_class` pilnuje regresji.
+
 ## 0.17.0
 
 - **Fix: budżet paliwowy liczył tankowania opłacone prywatnie** — oznaczenie

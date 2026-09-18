@@ -60,7 +60,7 @@ _SENSORS: list[_Sensor] = [
     _Sensor("last_fillup_date",     "Last Fillup Date",     None,       "timestamp", None,              "mdi:calendar-clock"),
     _Sensor("last_fillup_odometer", "Last Fillup Odometer", "km",       "distance", "measurement",      "mdi:counter"),
     _Sensor("last_fillup_price",    "Last Fillup Price",    "PLN/L",    None,       "measurement",      "mdi:tag-outline"),
-    _Sensor("last_fillup_volume",   "Last Fillup Volume",   "L",        "volume",   "measurement",      "mdi:fuel"),
+    _Sensor("last_fillup_volume",   "Last Fillup Volume",   "L",        "volume",   None,               "mdi:fuel"),
     _Sensor("last_fillup_cost",     "Last Fillup Cost",     "PLN",      "monetary", None,               "mdi:cash"),
     _Sensor("last_fillup_station",  "Last Fillup Station",  None,       None,       None,               "mdi:gas-station"),
     _Sensor("expenses_total",       "Expenses Total",       "PLN",      "monetary", "total",            "mdi:receipt"),

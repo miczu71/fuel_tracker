@@ -131,6 +131,15 @@ def test_no_monetary_on_per_unit_sensors():
             assert s.device_class is None, s.slug
 
 
+def test_volume_sensors_have_valid_state_class():
+    # HA walidator: device_class 'volume' dopuszcza tylko state_class
+    # None/'total'/'total_increasing' — 'measurement' jest odrzucane
+    # (ten sam mechanizm co monetary, złapany na last_fillup_volume w 0.17.x).
+    for s in publisher._SENSORS:
+        if s.device_class == "volume":
+            assert s.state_class in (None, "total", "total_increasing"), s.slug
+
+
 # 0.14.0: sensory monetary z natury malejące/wahające się (budget_left_month,
 # month_forecast_cost, last_fillup_cost) NIE mogą mieć state_class 'total' —
 # HA zaliczyłby każdy spadek jako reset licznika i zepsuł sumę LTS (dokładnie
