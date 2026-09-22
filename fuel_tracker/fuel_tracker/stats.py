@@ -168,16 +168,6 @@ def ytd_fuel_cost(fillups: list[dict], year: str) -> float:
                      if f["date"][:4] == year), 2)
 
 
-def month_forecast_cost(fillups: list[dict], now: datetime,
-                        card_only: bool = False) -> Optional[float]:
-    """Prognoza kosztu paliwa w bieżącym miesiącu (tempo dotychczasowe)."""
-    spent = month_fuel_spend(fillups, now.strftime("%Y-%m"), card_only=card_only)
-    if not spent:
-        return None
-    days_in_month = monthrange(now.year, now.month)[1]
-    return round(spent / now.day * days_in_month, 2)
-
-
 def projected_annual_km(fillups: list[dict]) -> Optional[int]:
     """Roczne tempo przebiegu z całej historii (odometr vs czas)."""
     dated = sorted((f for f in fillups if f["date"]), key=lambda f: f["date"])

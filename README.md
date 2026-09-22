@@ -192,7 +192,6 @@ Stany**.
 | `sensor.<pojazd>_fuel_region_fuel_price` | PLN/L | measurement | Cena regionalna paliwa (`price_region`, autocentrum.pl) |
 | `sensor.<pojazd>_fuel_price_vs_region` | PLN/L | measurement | Moja ostatnia cena − cena regionalna (ujemna = taniej) |
 | `sensor.<pojazd>_fuel_estimated_range` | km | measurement | Zasięg na pełnym baku przy średnim spalaniu |
-| `sensor.<pojazd>_fuel_month_forecast_cost` | PLN | *(brak)* | Prognoza kosztu paliwa w bieżącym miesiącu — waha się w obie strony, bez wykresu historycznego |
 | `sensor.<pojazd>_fuel_ytd_fuel_cost` | PLN | total (`last_reset` co rok) | Wydatki na paliwo od początku roku |
 | `sensor.<pojazd>_fuel_projected_annual_km` | km | measurement | Roczne tempo przebiegu (ekstrapolacja historii) |
 | `sensor.<pojazd>_fuel_best_station` | — | — | Stacja z najniższą średnią ceną (min. 2 tankowania) |
@@ -205,8 +204,8 @@ Stany**.
 > **Wykresy historyczne (0.14.0):** tylko sensory z kolumną `state_class` w
 > tabeli wyżej nadają się na karty `statistics-graph`/`history-graph` z
 > agregacją sumy. Sensory oznaczone *(brak)* z natury nie są sumą narastającą:
-> `budget_left_month`, `month_forecast_cost` i `last_fillup_cost` maleją albo
-> skaczą w obie strony; `last_fillup_volume` to wartość pojedynczego
+> `budget_left_month` i `last_fillup_cost` maleją albo skaczą w obie strony;
+> `last_fillup_volume` to wartość pojedynczego
 > tankowania, nie suma — pokazuj je jako bieżącą wartość
 > (`entities`/`glance`/gauge), nie jako wykres sumy w czasie.
 

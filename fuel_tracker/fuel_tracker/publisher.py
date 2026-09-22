@@ -41,10 +41,10 @@ class _Sensor(NamedTuple):
 # state_class 'total' (0.14.0): tylko dla liczników, które od powstania auta
 # WYŁĄCZNIE rosną (total_cost/expenses_total/self_paid_fuel_total) albo mają
 # last_reset_key opisujący ich cykl (month_fuel_cost/ytd_fuel_cost). Reszta
-# sensorów monetary (budget_left_month maleje, month_forecast_cost i
-# last_fillup_cost skaczą w obie strony) zostaje bez state_class — HA
-# dopuszcza device_class monetary bez state_class, walidator odrzuca tylko
-# state_class niekompatybilny z monetary (np. 'measurement'), nie jego brak.
+# sensorów monetary (budget_left_month maleje, last_fillup_cost skacze w obie
+# strony) zostaje bez state_class — HA dopuszcza device_class monetary bez
+# state_class, walidator odrzuca tylko state_class niekompatybilny z
+# monetary (np. 'measurement'), nie jego brak.
 # Bez last_reset/bez state_class silnik statystyk HA traktował każdy spadek
 # (rollover miesiąca/roku) jako reset licznika i dopisywał całą nową wartość
 # do sumy LTS — dokładnie ten mechanizm zepsuł kartę wykresu w utility_meter
@@ -75,7 +75,6 @@ _SENSORS: list[_Sensor] = [
     _Sensor("region_fuel_price",    "Region Fuel Price",    "PLN/L",    None,       "measurement",      "mdi:gas-station-in-use"),
     _Sensor("price_vs_region",      "Price Vs Region",      "PLN/L",    None,       "measurement",      "mdi:scale-balance"),
     _Sensor("estimated_range_km",   "Estimated Range",      "km",       "distance", "measurement",      "mdi:map-marker-path"),
-    _Sensor("month_forecast_cost",  "Month Forecast Cost",  "PLN",      "monetary", None,               "mdi:chart-timeline-variant"),
     _Sensor("ytd_fuel_cost",        "YTD Fuel Cost",        "PLN",      "monetary", "total",            "mdi:calendar-range", "ytd_fuel_cost_last_reset"),
     _Sensor("projected_annual_km",  "Projected Annual Km",  "km",       "distance", "measurement",      "mdi:speedometer"),
     _Sensor("best_station",         "Best Station",         None,       None,       None,               "mdi:trophy"),

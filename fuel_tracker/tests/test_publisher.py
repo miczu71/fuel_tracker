@@ -141,11 +141,10 @@ def test_volume_sensors_have_valid_state_class():
 
 
 # 0.14.0: sensory monetary z natury malejące/wahające się (budget_left_month,
-# month_forecast_cost, last_fillup_cost) NIE mogą mieć state_class 'total' —
-# HA zaliczyłby każdy spadek jako reset licznika i zepsuł sumę LTS (dokładnie
-# ten mechanizm zepsuł kartę wykresu utility_meter "koszt paliwa miesięcznie").
-_NON_CUMULATIVE_MONETARY = {"budget_left_month", "month_forecast_cost",
-                           "last_fillup_cost"}
+# last_fillup_cost) NIE mogą mieć state_class 'total' — HA zaliczyłby każdy
+# spadek jako reset licznika i zepsuł sumę LTS (dokładnie ten mechanizm
+# zepsuł kartę wykresu utility_meter "koszt paliwa miesięcznie").
+_NON_CUMULATIVE_MONETARY = {"budget_left_month", "last_fillup_cost"}
 
 
 def test_non_cumulative_monetary_sensors_have_no_state_class():

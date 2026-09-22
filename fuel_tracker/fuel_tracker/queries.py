@@ -82,11 +82,6 @@ def sensor_values(conn: sqlite3.Connection, vehicle_id: int,
         # Statystyki 0.4.0
         "estimated_range_km": st.estimated_range_km(s.avg_consumption,
                                                     tank_capacity_l),
-        "month_forecast_cost": st.month_forecast_cost(fillups, now),
-        # Prognoza kartowa — używana tylko przez alert budżetu
-        # (notifications._messages), nie ma własnego sensora publikowanego.
-        "month_card_forecast_cost": st.month_forecast_cost(
-            fillups, now, card_only=True),
         "ytd_fuel_cost": st.ytd_fuel_cost(fillups, now.strftime("%Y")),
         "projected_annual_km": st.projected_annual_km(fillups),
         "best_station": st.best_station(fillups),

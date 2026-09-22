@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.18.0
+
+- **Usunięta prognoza kosztu paliwa do końca miesiąca** — na życzenie
+  użytkownika: liczba nie była mu do niczego potrzebna. Wycięte całkowicie:
+  funkcja `stats.month_forecast_cost()`, pola `month_forecast_cost` i
+  `month_card_forecast_cost` w API (`/api/statistics`), sensor MQTT
+  `sensor.<pojazd>_fuel_month_forecast_cost`, kafelek „Prognoza na miesiąc"
+  na pulpicie (popup „samochod") i zdanie „Prognoza na cały miesiąc: X PLN."
+  w treści powiadomień alertu budżetu (teraz kończą się samą kwotą
+  pozostałego/przekroczonego budżetu). `budget_left_month`,
+  `month_fuel_cost`, `month_card_fuel_cost`, `ytd_fuel_cost`,
+  `projected_annual_km` i `lease_depletion_date` — bez zmian, to inne
+  wartości. Osierocony sensor i retained MQTT discovery posprzątane ręcznie
+  po wdrożeniu (sensor nigdy nie miał `state_class`, więc brak wpływu na
+  długoterminowe statystyki/recorder).
+
 ## 0.17.1
 
 - **Fix: `sensor.superb_fuel_last_fillup_volume` miał niedozwoloną kombinację
