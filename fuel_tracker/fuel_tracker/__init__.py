@@ -1,3 +1,3 @@
 """Fuel Tracker — dziennik tankowań i wydatków samochodu."""
 
-__version__ = "0.18.0"
+__version__ = "0.18.1"

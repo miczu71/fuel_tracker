@@ -25,6 +25,8 @@ from pathlib import Path
 
 import requests
 
+from . import __version__
+
 logger = logging.getLogger(__name__)
 
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -124,7 +126,11 @@ def call_local(image_path: str, prompt: str, structure: dict, *,
             "json_schema": {"name": "receipt", "strict": True, "schema": structure},
         },
     }
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": f"ha-fuel/{__version__}",
+    }
     url = f"{base_url}/chat/completions"
 
     resp = None
