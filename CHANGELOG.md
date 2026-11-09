@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0
+
+- **Wersja 1.0.0** — uznana za stabilną; bez zmian w działaniu.
+
 ## 0.18.1
 
 - Zapytania do routera LLM niosą nagłówek `User-Agent: ha-fuel/<wersja>`, dzięki czemu panel LLM (:3004) pokazuje, który add-on używa którego modelu. Bez zmian w działaniu.
